@@ -1,0 +1,52 @@
+/* Incremental migration: keep all existing page CSS and omit global Preflight. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) important source(none);
+@import "tw-animate-css";
+@source "./**/*.{vue,ts}";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --ui-primary-foreground: #ffffff;
+  --ui-destructive: #c53845;
+  --ui-radius: 0.625rem;
+}
+:root[data-theme="dark"] { --ui-primary-foreground: #17132e; --ui-destructive: #dc6976; }
+
+/* Semantic shadcn tokens derive from the existing account-scoped theme. */
+@theme inline {
+  --color-background: var(--surface, #ffffff);
+  --color-foreground: var(--ink, #172033);
+  --color-card: var(--surface, #ffffff);
+  --color-card-foreground: var(--ink, #172033);
+  --color-popover: var(--surface-raised, #ffffff);
+  --color-popover-foreground: var(--ink, #172033);
+  --color-primary: var(--primary, #5a56e9);
+  --color-primary-foreground: var(--ui-primary-foreground);
+  --color-secondary: var(--surface-subtle, #f7f9fc);
+  --color-secondary-foreground: var(--ink, #172033);
+  --color-muted: var(--surface-subtle, #f7f9fc);
+  --color-muted-foreground: var(--muted, #798399);
+  --color-accent: var(--primary-soft, #eeedff);
+  --color-accent-foreground: var(--primary, #5a56e9);
+  --color-destructive: var(--ui-destructive);
+  --color-border: var(--line, #e7eaf0);
+  --color-input: var(--line, #e7eaf0);
+  --color-ring: var(--primary, #5a56e9);
+  --radius-sm: calc(var(--ui-radius) - 4px);
+  --radius-md: calc(var(--ui-radius) - 2px);
+  --radius-lg: var(--ui-radius);
+  --radius-xl: calc(var(--ui-radius) + 4px);
+  --text-xs: calc(0.75rem * var(--devflow-font-scale, 1));
+  --text-sm: calc(0.875rem * var(--devflow-font-scale, 1));
+  --text-base: calc(1rem * var(--devflow-font-scale, 1));
+  --text-lg: calc(1.125rem * var(--devflow-font-scale, 1));
+  --text-xl: calc(1.25rem * var(--devflow-font-scale, 1));
+  --text-2xl: calc(1.5rem * var(--devflow-font-scale, 1));
+}
+
+/* Normalize only new primitives, not existing forms or user-authored rich text. */
+[data-slot="button"] { font-family: inherit; line-height: 1.4; text-decoration: none; cursor: pointer; }
+[data-slot="button"]:disabled { cursor: not-allowed; }
+[data-slot="popover-content"] { max-width:calc(100vw - 24px); max-height:var(--reka-popover-content-available-height); }

@@ -1,0 +1,177 @@
+/* 列表空间优先：只有显式标记的页头和列表工具栏采用紧凑尺寸。
+ * 说明与复杂人员筛选按需展开；窄屏自然换行，不能靠裁切隐藏操作。
+ */
+:root body .app-shell .compact-page-heading {
+  display:flex; flex-direction:row; align-items:center; justify-content:space-between;
+  gap:8px 16px; min-height:40px; margin:0 0 12px; padding:0;
+}
+:root body .app-shell .compact-page-heading>div:first-child {
+  display:flex; align-items:center; gap:10px; min-width:0; flex:1;
+}
+:root body .app-shell .compact-page-heading h1 {
+  min-width:0; margin:0; font-size:21px; line-height:30px; font-weight:650;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+:root body .app-shell .compact-page-heading>.btn,
+:root body .app-shell .compact-page-heading>button { flex:none; }
+:root body .app-shell .compact-heading-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+:root body .app-shell .compact-heading-actions .segmented { margin:0; padding:2px; }
+:root body .app-shell .compact-heading-count { font-size:12px; font-weight:500; color:var(--muted-foreground); margin-left:4px; }
+:root body .app-shell .compact-page-heading :is(.btn,button) {
+  min-height:32px; padding:6px 10px; font-size:12px; line-height:18px; box-shadow:none;
+}
+:root body .app-shell .requirements-v4 .pool-heading {
+  padding-bottom:0!important; margin-bottom:10px!important;
+}
+:root body .app-shell .page-heading-note { position:relative; flex:none; }
+:root body .app-shell .page-heading-note>summary {
+  display:grid; place-items:center; width:24px; height:28px; cursor:pointer;
+  color:var(--muted-foreground); list-style:none; border-radius:4px;
+}
+:root body .app-shell .page-heading-note>summary::-webkit-details-marker { display:none; }
+:root body .app-shell .page-heading-note>summary>span {
+  display:grid; place-items:center; width:15px; height:15px; border:1px solid currentColor;
+  border-radius:50%; font-size:10px; line-height:1; font-weight:500;
+}
+:root body .app-shell .page-heading-note>summary:hover { background:var(--secondary); color:var(--foreground); }
+:root body .app-shell .page-heading-note>summary:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+:root body .app-shell .page-heading-note>p {
+  display:block; position:absolute; z-index:80; top:100%; left:0;
+  width:min(320px,calc(100vw - 48px)); max-width:none; margin:5px 0 0;
+  padding:12px; border:1px solid var(--border); border-radius:6px;
+  background:var(--card); color:var(--muted-foreground); font-size:12px;
+  font-weight:400; line-height:1.7; white-space:normal; overflow-wrap:anywhere;
+}
+
+/* 迭代名称、编号、状态与操作同排；目标内容保留在说明入口。 */
+:root body .app-shell .iteration-head.compact-page-heading { padding:12px 24px; margin:0; flex-wrap:wrap; }
+:root body .app-shell .iteration-head.compact-page-heading>div:first-child { flex:1 1 340px; }
+:root body .app-shell .iteration-head h1 { order:-1; }
+:root body .app-shell .iteration-head .iteration-kicker { display:flex; align-items:center; flex:none; gap:6px; margin:0; font-size:11px; }
+:root body .app-shell .iteration-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0; }
+:root body .app-shell .iteration-main .sprint-shared-tools { padding:8px 24px; }
+:root body .app-shell .iteration-main .configurable-sprint-toolbar {
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:0; margin:0;
+  border:0; border-radius:0; background:transparent;
+}
+:root body .app-shell .iteration-main :is(.sprint-toolbar-primary,.sprint-toolbar-actions) {
+  display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-width:0; width:auto;
+}
+:root body .app-shell .iteration-main .sprint-toolbar-actions { margin-left:auto; }
+:root body .app-shell .iteration-main .sprint-toolbar-primary { flex:1 1 320px; }
+:root body .app-shell .iteration-main .sprint-search-input {
+  appearance:none; -webkit-appearance:none; border:1px solid var(--input);
+  border-radius:6px; width:220px; max-width:100%; min-width:100px; height:32px;
+  padding:0 10px; background:var(--card); color:var(--foreground); font:inherit;
+  font-size:12px; box-shadow:none; flex:0 1 220px;
+}
+:root body .app-shell .sprint-filter-count { white-space:nowrap; color:var(--muted-foreground); font-size:11px; }
+:root body .app-shell .iteration-main .iteration-content { padding-top:10px; }
+
+/* 各列表共用的筛选密度。搜索只保留一层实线边框，消除原生凹陷边框。 */
+:root body .app-shell :is(.requirements-v4 .req-toolbar,.module-page .module-toolbar,.testing-workspace .test-filter-bar) {
+  display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px;
+  min-height:0; padding:8px 10px; margin:0 0 10px; border-radius:6px; box-shadow:none;
+}
+:root body .app-shell :is(.req-toolbar,.module-toolbar,.configurable-sprint-toolbar,.test-filter-bar,.req-viewbar)
+  :is(.btn,.app-select-trigger,.status-filter-trigger,select),
+:root body .app-shell :is(.req-toolbar,.module-toolbar,.test-filter-bar)>button,
+:root body .app-shell :is(.req-toolbar,.configurable-sprint-toolbar) .list-export>button {
+  min-height:32px; height:32px; padding:5px 9px; font-size:12px; line-height:20px;
+  border-radius:6px; box-shadow:none; white-space:nowrap;
+}
+:root body .app-shell :is(.req-toolbar,.module-toolbar,.test-filter-bar) :is(.search,.test-search) {
+  display:flex; align-items:center; height:32px; min-height:32px; min-width:140px;
+  gap:6px; padding:0 9px; border:1px solid var(--input); border-radius:6px;
+  background:var(--card); color:var(--muted-foreground); box-shadow:none;
+}
+:root body .app-shell :is(.search,.test-search,.category-search) input {
+  appearance:none; -webkit-appearance:none; border:0; border-radius:0;
+  min-width:0; background:transparent; color:var(--foreground); box-shadow:none;
+}
+:root body .app-shell :is(.req-toolbar,.module-toolbar,.test-filter-bar) :is(.search,.test-search) input {
+  height:30px; min-height:0; padding:0; font-size:12px; line-height:20px; box-shadow:none;
+}
+:root body .app-shell :is(.search,.test-search,.category-search):focus-within,
+:root body .app-shell .sprint-search-input:focus-visible {
+  border-color:var(--primary); outline:2px solid var(--primary); outline-offset:2px; box-shadow:none;
+}
+:root body .app-shell .requirements-v4 .req-toolbar .search {
+  /* 通过控件契约的尺寸参数适配双侧栏，避免与全站 important 规则竞争。 */
+  --search-width:220px; --search-min-width:160px; --search-max-width:360px;
+}
+:root body .app-shell .requirements-v4 .req-toolbar>.member-multi-compact { flex:0 1 160px; min-width:130px; }
+:root body .app-shell .requirements-v4 .req-toolbar>select { min-width:0; max-width:160px; }
+:root body .app-shell .requirements-v4 .req-toolbar>.status-filter { flex:none; }
+
+/* 保存视图与列表展示设置合并，移除单独的视图行和重复计数。 */
+:root body .app-shell .requirements-v4 .req-viewbar {
+  display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; padding:0 0 10px; min-height:0;
+}
+:root body .app-shell .req-viewbar .saved-views { padding:0; border:0; flex:1 1 310px; }
+:root body .app-shell .req-viewbar .saved-views-bar { gap:6px; }
+:root body .app-shell .req-viewbar .saved-view-select { min-width:150px; max-width:200px; }
+:root body .app-shell .req-viewbar .view-refresh { margin-left:0; }
+/* 视图更新、删除、刷新与字段管理属于低频操作，随“更多筛选与操作”展开。 */
+:root body .app-shell .req-viewbar.is-compact .saved-views-bar>.link,
+:root body .app-shell .req-viewbar.is-compact .req-display-tools>a { display:none; }
+:root body .app-shell .req-viewbar>.req-display-tools { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-left:auto; }
+:root body .app-shell .req-viewbar .req-display-tools>select { width:115px; }
+:root body .app-shell :is(.req-view-switch,.defect-view-switch,.work-view-switch) { padding:2px; box-shadow:none; }
+:root body .app-shell :is(.req-view-switch,.defect-view-switch,.work-view-switch) button { min-height:28px; padding:4px 10px; font-size:12px; box-shadow:none; }
+
+/* 测试协作还有一层用例库标题，统一取消大间距，但不压缩编辑器。 */
+:root body .app-shell .testing-workspace-head.compact-page-heading { padding:10px 26px; margin:0; }
+:root body .app-shell .testing-workspace .test-workspace-tabs button { padding:10px 14px; }
+:root body .app-shell .testing-workspace :is(.test-library-main,.test-designs,.test-operations) { padding-top:14px; }
+:root body .app-shell .testing-workspace :is(.test-content-heading,.test-section-head) {
+  display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-bottom:12px;
+}
+:root body .app-shell .test-content-heading>div:first-child { display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
+:root body .app-shell .test-content-heading h2 { margin:0; order:-1; font-size:18px; }
+:root body .app-shell .test-content-heading .test-actions { width:auto; margin-left:auto; }
+:root body .app-shell .test-filter-bar .test-search { flex:1 1 140px; max-width:320px; }
+:root body .app-shell .test-filter-bar>.app-select-trigger { min-width:96px; max-width:160px; }
+:root body .app-shell .test-owner-filters { display:flex; align-items:center; gap:6px; min-width:0; }
+:root body .app-shell .test-owner-filters>.app-select-trigger { min-width:110px; max-width:160px; }
+:root body .app-shell .test-owner-filters>.test-filter-mine { min-height:32px; height:32px; padding:5px 9px; font-size:12px; }
+:root body .app-shell :is(.dashboard-page,.workload-page,.roadmap-page) { padding-top:16px; }
+
+/* 桌面筛选组整体换行，组内由搜索框让出宽度，避免只剩一个筛选按钮占一行。 */
+@media(min-width:821px) {
+  :root body .app-shell .iteration-main .sprint-toolbar-primary {
+    display:grid; flex-basis:400px; grid-auto-flow:column; grid-auto-columns:max-content;
+    grid-template-columns:minmax(110px,140px) minmax(100px,1fr) auto;
+  }
+  :root body .app-shell .iteration-main .sprint-toolbar-primary>.status-filter {
+    width:100%; min-width:0;
+  }
+  :root body .app-shell .iteration-main .sprint-search-input { width:100%; }
+}
+
+@media(max-width:820px) {
+  :root body .app-shell .compact-page-heading { flex-wrap:wrap; gap:8px; }
+  :root body .app-shell .compact-page-heading>div:first-child { flex:1 1 auto; max-width:100%; }
+  :root body .app-shell .compact-page-heading h1 { font-size:19px; }
+  :root body .app-shell .compact-page-heading :is(.btn,button),
+  :root body .app-shell :is(.req-toolbar,.module-toolbar,.configurable-sprint-toolbar,.test-filter-bar,.req-viewbar)
+    :is(.btn,.app-select-trigger,.status-filter-trigger,select),
+  :root body .app-shell :is(.req-toolbar,.module-toolbar,.test-filter-bar)>button,
+  :root body .app-shell :is(.req-toolbar,.configurable-sprint-toolbar) .list-export>button { min-height:40px; height:auto; font-size:13px; }
+  :root body .app-shell :is(.req-toolbar,.module-toolbar,.test-filter-bar) :is(.search,.test-search),
+  :root body .app-shell .iteration-main .sprint-search-input { min-height:40px; height:40px; }
+  :root body .app-shell :is(.req-toolbar,.module-toolbar,.test-filter-bar) :is(.search,.test-search) input { height:38px; font-size:16px; }
+  :root body .app-shell .iteration-head.compact-page-heading { padding:10px 16px; }
+  :root body .app-shell .iteration-head>div:first-child { flex-wrap:wrap; }
+  :root body .app-shell .iteration-main .sprint-shared-tools { padding:8px 16px; }
+  :root body .app-shell .iteration-main .sprint-toolbar-actions { margin-left:0; }
+  :root body .app-shell .iteration-main .sprint-sort-select { flex:0 0 auto; min-width:128px; }
+  :root body .app-shell .requirements-v4 .req-toolbar>.member-multi-compact { flex:1 1 150px; }
+  :root body .app-shell .requirements-v4 .req-toolbar>select { flex:1 1 140px; min-width:140px; max-width:none; }
+  :root body .app-shell .requirements-v4 .req-toolbar .search { max-width:none; }
+  :root body .app-shell .test-owner-filters { flex-wrap:wrap; }
+  :root body .app-shell .test-owner-filters>.test-filter-mine { min-height:40px; height:40px; font-size:13px; }
+  :root body .app-shell .req-viewbar>.req-display-tools { margin-left:0; }
+  :root body .app-shell .testing-workspace-head.compact-page-heading { padding:10px 18px; }
+  :root body .app-shell .page-heading-note>p { position:fixed; top:auto; left:16px; margin-top:5px; width:calc(100vw - 32px); }
+}

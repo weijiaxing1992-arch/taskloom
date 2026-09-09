@@ -1,0 +1,291 @@
+/*
+ * 需求、迭代与缺陷工作项的统一视觉层。
+ *
+ * 这些模块历史上分别维护了列表、看板和抽屉样式，容易在深色皮肤下出现白色
+ * 表格、灰色文字或状态标签对比度不足。本文件只使用 shadcn 语义令牌做覆盖：
+ * - 不改变路由、请求、筛选和状态流转；
+ * - 不接管定位、尺寸或事件命中，抽屉/分隔条仍由对应组件管理；
+ * - 用同一层级表达“页面底色 → 容器 → 卡片 → 可点击行”。
+ *
+ * 选择器限定在工作项页面，避免把数据看板、成员管理等成熟页面一并重绘。
+ */
+
+:root {
+  --work-item-surface: var(--card);
+  --work-item-subtle: var(--secondary);
+  --work-item-hover: color-mix(in srgb, var(--primary) 7%, var(--background));
+  --work-item-selected: color-mix(in srgb, var(--primary) 12%, var(--background));
+  --work-item-soft-border: color-mix(in srgb, var(--border) 78%, var(--background));
+  /* 工作项内容用边框和底色区分层级，不再用卡片投影挤压列表视觉空间。 */
+  --work-item-shadow: none;
+  --work-item-raised-shadow: none;
+}
+
+/* 列表工具栏保持为次级表面，筛选控件使用卡片表面，清晰区分操作与数据区。 */
+:root body .app-shell :is(.requirements-v4 .req-toolbar, .defects-content .module-toolbar,
+  .iteration-main .sprint-shared-tools) {
+  border-color: var(--border);
+  background: var(--work-item-subtle);
+}
+
+:root body .app-shell .requirements-v4 .req-toolbar,
+:root body .app-shell .defects-content .module-toolbar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+:root body .app-shell :is(.requirements-v4 .req-toolbar, .defects-content .module-toolbar,
+  .iteration-main .configurable-sprint-toolbar) :is(.search, input, select, .status-filter-trigger) {
+  border-color: var(--input);
+  background: var(--work-item-surface);
+  color: var(--foreground);
+}
+
+:root body .app-shell :is(.requirements-v4 .req-viewbar select, .iteration-main .configurable-sprint-toolbar > select) {
+  border-color: var(--input);
+  background: var(--work-item-surface);
+  color: var(--foreground);
+}
+
+:root body .app-shell :is(.requirements-v4 .req-viewbar small, .iteration-main .sprint-assignees > span) {
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border));
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* 一套表头、悬浮行和固定列规则；水平滚动时固定列不会回到浅色。 */
+:root body .app-shell :is(.requirements-v4 .table-wrap, .iteration-main .configurable-sprint-table,
+  .defects-content .table-card) {
+  border-color: var(--border);
+  background: var(--work-item-surface);
+  box-shadow: var(--work-item-shadow);
+}
+
+:root body .app-shell :is(.requirements-v4 .configurable-table, .iteration-main .configurable-sprint-table table,
+  .defects-content .table-card table) {
+  color: var(--foreground);
+  background: var(--work-item-surface);
+}
+
+:root body .app-shell :is(.requirements-v4 .configurable-table th, .iteration-main .configurable-sprint-table th,
+  .defects-content .table-card th) {
+  border-color: var(--border);
+  background: var(--work-item-subtle);
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+:root body .app-shell :is(.requirements-v4 .configurable-table td, .iteration-main .configurable-sprint-table td,
+  .defects-content .table-card td) {
+  border-color: var(--work-item-soft-border);
+  color: var(--foreground);
+  background: var(--work-item-surface);
+}
+
+:root body .app-shell .requirements-v4 .configurable-table :is(.sticky-code, .sticky-title) {
+  background: var(--work-item-surface);
+  box-shadow: 1px 0 0 var(--border);
+}
+
+:root body .app-shell .requirements-v4 .configurable-table th:is(.sticky-code, .sticky-title) {
+  background: var(--work-item-subtle);
+}
+
+:root body .app-shell :is(.requirements-v4 .configurable-table, .iteration-main .configurable-sprint-table,
+  .defects-content .table-card) tbody tr:not(.released-requirement-row):hover > td,
+:root body .app-shell .requirements-v4 .configurable-table tbody tr.selected > td {
+  background: var(--work-item-hover);
+}
+
+:root body .app-shell .requirements-v4 .configurable-table tbody tr:not(.released-requirement-row):hover :is(.sticky-code, .sticky-title),
+:root body .app-shell .requirements-v4 .configurable-table tbody tr.selected :is(.sticky-code, .sticky-title) {
+  background: var(--work-item-hover);
+}
+
+:root body .app-shell :is(.req-title-link, .work-title, .requirement-title) {
+  color: var(--foreground);
+}
+
+:root body .app-shell :is(.req-title-link, .work-title, .requirement-title):is(:hover, :focus-visible) {
+  color: var(--primary);
+}
+
+:root body .app-shell :is(.total-value, .requirements-v4 .numeric-cell) {
+  color: var(--accent-foreground);
+}
+
+/* 状态的实际颜色仍来自工作流/标签配置；这里只提高标记的密度与边界可读性。 */
+:root body .app-shell :is(.requirements-v4, .defects-content, .iteration-main) .workflow-color,
+:root body .app-shell :is(.requirements-v4, .defects-content, .iteration-main) .severity,
+:root body .app-shell :is(.requirements-v4, .defects-content, .iteration-main) .priority {
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  box-shadow: none;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+:root body .app-shell .defects-content .defect-inline-status {
+  border-color: color-mix(in srgb, currentColor 28%, var(--border));
+  background-color: var(--work-item-surface);
+  color: var(--foreground);
+  box-shadow: none;
+}
+
+:root body .app-shell .defects-content .defect-inline-status:hover {
+  border-color: var(--primary);
+  background: var(--work-item-hover);
+}
+
+/* 三类看板都遵循“次级列、卡片工作项、状态色作为窄边”的层级。 */
+:root body .app-shell :is(.requirement-status-board, .defect-status-board, .iteration-board) {
+  gap: 16px;
+  padding: 8px 2px 20px;
+  color: var(--foreground);
+}
+
+:root body .app-shell :is(.requirement-status-board > section, .defect-status-board > section,
+  .iteration-board .board-col) {
+  border-color: var(--border);
+  background: var(--work-item-subtle);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+:root body .app-shell :is(.requirement-status-board h3, .iteration-board h4) {
+  color: var(--foreground);
+  border-bottom: 1px solid var(--work-item-soft-border);
+  padding-bottom: 10px;
+}
+
+:root body .app-shell .defect-status-board > section > header {
+  border-bottom: 1px solid var(--work-item-soft-border);
+  padding-bottom: 10px;
+}
+
+:root body .app-shell :is(.requirement-board-card, .defect-board-card, .iteration-board .work-card) {
+  border-color: var(--border);
+  background: var(--work-item-surface);
+  color: var(--foreground);
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: var(--work-item-shadow);
+}
+
+:root body .app-shell :is(.requirement-board-card, .defect-board-card, .iteration-board .work-card):is(:hover, :focus-within) {
+  border-color: var(--primary);
+  background: var(--work-item-surface);
+  box-shadow: var(--work-item-raised-shadow);
+}
+
+:root body .app-shell :is(.requirement-board-meta, .defect-board-card > span,
+  .defect-board-card > small, .iteration-board .work-card > span:first-child,
+  .iteration-board .work-card footer) {
+  color: var(--muted-foreground);
+}
+
+:root body .app-shell .iteration-board .work-progress,
+:root body .app-shell .iteration-main .progress {
+  background: color-mix(in srgb, var(--primary) 10%, var(--secondary));
+}
+
+:root body .app-shell .iteration-board .work-progress i,
+:root body .app-shell .iteration-main .progress i {
+  background: var(--primary);
+}
+
+/* 抽屉采用与主表同一表面语言，右侧基础信息与正文之间不再出现不同肤色的断层。 */
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) {
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: none;
+}
+
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .drawer-head {
+  border-color: var(--border);
+  background: var(--card);
+}
+
+:root body .app-shell .requirement-drawer .detail-navigation {
+  border-color: var(--border);
+  background: var(--secondary);
+}
+
+:root body .app-shell .requirement-drawer .detail-navigation button {
+  color: var(--muted-foreground);
+}
+
+:root body .app-shell .requirement-drawer .detail-navigation button:hover {
+  background: var(--work-item-hover);
+  color: var(--foreground);
+}
+
+:root body .app-shell .requirement-drawer .detail-navigation button.active {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+:root body .app-shell .requirement-drawer .detail-tag-section,
+:root body .app-shell .requirement-drawer .detail-block,
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .detail-audit,
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .detail-columns {
+  border-color: var(--border);
+}
+
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) :is(.detail-main, .detail-reading) {
+  background: var(--card);
+  color: var(--card-foreground);
+}
+
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .detail-props {
+  border-color: var(--border);
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .detail-props :is(input, select, textarea) {
+  border-color: var(--input);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+:root body .app-shell .requirement-drawer :is(.detail-time, .detail-nav-caption, .detail-nav-summary,
+  .detail-pane-heading p, .detail-assignees > label, .detail-audit dt) {
+  color: var(--muted-foreground);
+}
+
+:root body .app-shell .requirement-drawer .detail-nav-summary strong {
+  color: var(--primary);
+}
+
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .detail-block p {
+  color: var(--muted-foreground);
+}
+
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .detail-block h3,
+:root body .app-shell :is(.requirement-drawer, .module-detail-drawer) .drawer-title h2 {
+  color: var(--foreground);
+}
+
+/* 表格内状态下拉与抽屉状态选择的焦点统一使用 shadcn ring，不在深色下遗留亮白边框。 */
+:root body .app-shell :is(.defect-inline-status, .transition-trigger, .status-filter-trigger):focus-visible {
+  outline-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 20%, transparent);
+}
+
+@media (max-width: 820px) {
+  /* 移动端保持原有横向滚动/单列逻辑，只收紧卡片留白，避免一屏只能看到半张卡片。 */
+  :root body .app-shell :is(.requirement-status-board, .defect-status-board, .iteration-board) {
+    gap: 12px;
+    padding-bottom: 16px;
+  }
+
+  :root body .app-shell :is(.requirement-board-card, .defect-board-card, .iteration-board .work-card) {
+    padding: 12px;
+  }
+
+  :root body .app-shell .requirements-v4 .req-toolbar,
+  :root body .app-shell .defects-content .module-toolbar {
+    border-radius: calc(var(--radius) - 2px);
+  }
+}

@@ -1,0 +1,53 @@
+/* Theme-independent controls use the same surfaces in all application modules. */
+:root{--surface:#fff;--surface-subtle:#f7f9fc;--surface-raised:#fff;--canvas:#f5f7fb;--surface-soft:var(--surface-subtle);--text:var(--ink,#172033);--control-selected:#6255d9;--control-selected-text:#fff}
+html .work-tabs button.active{background:linear-gradient(135deg,#6255d9,#6659dc);color:#fff}
+html :is(.global-nav em,.icon-link em){background:#ca3649;color:#fff}
+html .danger-category{background:#c53845;border-color:#c53845;color:#fff}
+html .type-icon{background:#6258db;color:#fff}
+:root[data-theme="dark"]{--ink:#e0e7f2;--muted:#a0aec3;--line:#334057;--primary:#a198ff;--primary-soft:#2c294b;--rail:#101727;--surface:#182132;--surface-subtle:#141d2c;--surface-raised:#202b3e;--canvas:#101827;color:#d8e1ef;background:var(--canvas)}
+:root[data-theme="dark"] body{background:var(--canvas);color:#d8e1ef}
+:root[data-theme="dark"]{--palette-text:#dce5f3;--palette-muted:#a6b4cb;--palette-border:#344159;--palette-surface:#182132;--palette-subtle:#1b2638;--palette-strong:#101727;--palette-text-blue:#9cbcff;--palette-text-purple:#bab1ff;--palette-text-green:#83d8b3;--palette-text-amber:#f4cc83;--palette-text-red:#ffa1ae;--palette-tint-blue:#25324d;--palette-tint-purple:#302b4c;--palette-tint-green:#1d3b37;--palette-tint-amber:#3d3425;--palette-tint-red:#422c38}
+:root[data-theme="dark"] .btn.primary{background:#6255d9;border-color:#8274ed;color:#fff}
+:root[data-theme="dark"] :is(input,select,textarea){color-scheme:dark}
+:root[data-theme="dark"] :is(input,textarea)::placeholder{color:#8291a9}
+:root[data-theme="dark"] :is(.drawer-shade,.modal-shade,.modal-backdrop,.dialog-backdrop){background:#060c19a6}
+:root[data-theme="dark"] a{color:inherit}
+:root[data-theme="dark"] :is(.rich-text-editor,.rich-text-content) a{color:#b6b1ff}
+:root[data-theme="dark"] :is(.rail,.rail .global-nav,.rail-bottom) a{color:#bac8dd}
+@media(prefers-reduced-motion:no-preference){.theme-choice{transition:border-color .15s,background-color .15s}}
+/* User-configured label fills stay intact; switch only their readable text. */
+:root[data-theme="dark"] :is(.requirement-tag,.colored-tag,.sprint-assignees>span)[style*="--tag-dark-fg"]{--tag-foreground:var(--tag-dark-fg)}
+:root[data-theme="dark"] .workflow-color[style*="--tag-dark-fg"]{--tag-foreground:var(--tag-dark-fg)}
+/* Inline tags are also used in board cards, not only in the table tag component. */
+:root[data-theme="dark"] [style*="--tag-dark-fg"]{--tag-foreground:var(--tag-dark-fg)}
+/* Native menus are rendered by the browser, outside the CSS palette transformer. */
+:root[data-theme="dark"] select:not(.workflow-color){background-color:var(--surface-raised);color:var(--ink);border-color:var(--line)}
+:root[data-theme="dark"] :is(select option,select optgroup){background:var(--surface-raised);color:var(--ink)}
+:root[data-theme="dark"] select option:checked{background:var(--control-selected);color:var(--control-selected-text)}
+:root[data-theme="dark"] select option:disabled{color:var(--muted)}
+:root[data-theme="dark"] :is(.req-view-switch,.segmented,.settings-object-tabs) button.active{background:var(--control-selected);color:var(--control-selected-text)}
+:root[data-theme="dark"] .status-filter-done{background:var(--control-selected);color:var(--control-selected-text)}
+:root[data-theme="dark"] :is(.member-options,.member-search,.status-filter-menu){background:var(--surface-raised);border-color:var(--line);color:var(--ink)}
+:root[data-theme="dark"] .member-options button{background:transparent;color:var(--ink)}
+:root[data-theme="dark"] .member-options button:is(.active,:hover){background:var(--primary-soft)}
+:root[data-theme="dark"] :is(.member-chip,.member-chip>b){background:var(--primary-soft);border-color:var(--line);color:var(--primary)}
+:root[data-theme="dark"] .member-shortcuts :is(button,select){background:var(--surface-raised);border-color:var(--line)!important;color:var(--primary)}
+:root[data-theme="dark"] .application-settings :is(.enabled-label,.settings-success){color:#83d8b3}
+:root[data-theme="dark"] .application-settings :is(.settings-error,.field-error){color:#ffa1ae}
+:root[data-theme="dark"] .application-settings .settings-warning{color:#f4cc83}
+:root[data-theme="dark"] .application-settings .settings-table tbody tr:hover{background:var(--surface-raised)}
+:root[data-theme="dark"] .application-settings :is(.settings-table th,.workflow-matrix thead th,.same-state){background:var(--surface-subtle);color:var(--muted)}
+:root[data-theme="dark"] .application-settings .workflow-matrix .allowed-state{background:#292846}
+:root[data-theme="dark"] .application-settings .workflow-matrix .invalid-edge{background:#3d3425}
+:root[data-theme="dark"] .application-settings .edge-cell button{color:var(--primary)}
+:root[data-theme="dark"] .application-settings .settings-modal-shade{background:#060c19b8}
+:root[data-theme="dark"] :is(.requirement-status-board,.defect-status-board,.iteration-board){color:var(--ink);scrollbar-color:#657795 var(--surface-subtle)}
+:root[data-theme="dark"] :is(.requirement-status-board>section,.defect-status-board>section,.iteration-board .board-col){background:var(--surface-subtle);border-color:var(--line)}
+:root[data-theme="dark"] :is(.requirement-board-card,.defect-board-card,.iteration-board .work-card){background:var(--surface);color:var(--ink);border-color:var(--line)}
+:root[data-theme="dark"] :is(.requirement-board-card,.defect-board-card,.iteration-board .work-card):hover{background:var(--surface-raised);border-color:#837ce0;box-shadow:0 4px 14px #0003}
+:root[data-theme="dark"] :is(.requirement-board-meta,.defect-board-card>span,.defect-board-card>small,.iteration-board .work-card>span:first-child){color:var(--muted)}
+.requirement-status-board .req-tags{flex-wrap:wrap;overflow:visible}
+.requirement-board-meta>span{min-width:0;overflow-wrap:anywhere}
+.workflow-color{border:1px solid transparent;border-radius:6px}
+.requirement-state-control{display:grid;grid-template-columns:82px minmax(0,1fr);gap:8px;align-items:start;font-size:12px;margin-bottom:13px;color:var(--muted)}
+.req-view-switch{display:flex;padding:3px;border:1px solid var(--line);border-radius:7px;gap:3px}.req-view-switch button{border:0;background:transparent;color:var(--muted);border-radius:5px;padding:5px 12px;font-size:12px}.req-view-switch button.active{background:var(--primary);color:#fff}.requirement-status-board{display:flex;gap:14px;overflow:auto;min-height:280px;padding-bottom:16px;flex:1}.requirement-status-board>section{flex:0 0 270px;min-width:0;background:var(--surface-soft,#f8fafc);padding:12px;border:1px solid var(--line);border-radius:10px}.requirement-status-board h3{display:flex;justify-content:space-between;margin:0 0 12px;border-top:3px solid;padding-top:12px;font-size:13px}.requirement-status-board h3 small{color:var(--muted);font-weight:400}.requirement-board-card{display:grid;gap:12px;width:100%;margin-bottom:10px;text-align:left;border:1px solid var(--line);background:var(--surface,#fff);color:var(--ink);border-radius:8px;padding:14px;cursor:pointer}.requirement-board-card:hover{border-color:var(--primary);box-shadow:0 4px 12px #17203312}.requirement-board-card:focus-visible{outline:2px solid var(--primary);outline-offset:2px}.requirement-board-card strong{font-size:13px;line-height:1.6;overflow-wrap:anywhere}.requirement-board-meta{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--muted)}.requirement-board-card .req-tags span{border-radius:4px;padding:2px 5px;font-size:10px}

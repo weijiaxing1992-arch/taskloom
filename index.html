@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#6255d9"><meta name="apple-mobile-web-app-capable" content="yes"><title>TaskLoom · 星河示例企业研发协作</title></head><body><div id="app"></div><script type="module">
+// 只有根地址进入官方门户；业务深链接继续加载原工作台，避免门户与业务路由相互抢跳转。
+if (window.location.pathname === '/') window.location.replace('/projects')
+else import('/src/main.ts')
+</script></body></html>

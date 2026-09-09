@@ -1,0 +1,2 @@
+<script setup lang="ts">import {computed} from 'vue';import{useRoute}from'vue-router';const route=useRoute();const name=computed(()=>({iterations:'迭代',defects:'缺陷',tests:'测试'}[String(route.params.section)]))</script>
+<template><div class="placeholder"><div class="placeholder-art">◇</div><h2>{{name}}模块将在后续版本开放</h2><p>首版优先打磨需求从创建、评审到交付的完整闭环。</p><router-link class="btn primary" to="/requirements">返回需求工作台</router-link></div></template>

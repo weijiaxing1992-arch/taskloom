@@ -1,0 +1,6 @@
+TaskLoom
+Copyright 2026 TaskLoom contributors
+
+Community edition derived from the privately developed DevFlow application.
+Community changes include rebranding, synthetic seed organization data, Admin login, mandatory initial password rotation and loopback bootstrap safeguards.
+Third-party notices and license texts are retained separately.

@@ -1,0 +1,159 @@
+/*
+ * 页面级滚动和分页的公共基线。
+ *
+ * 各业务页可以保留自己的表格/抽屉内部滚动，但 workspace 的主区域必须能垂直滚动；
+ * 否则工作量这类自然高度页面会被 shell 的 100vh 截断，底部内容不可达。
+ */
+.app-shell .workspace > main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.app-shell .workspace > main::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.app-shell .workspace > main::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground, var(--muted)) 42%, transparent);
+  background-clip: padding-box;
+}
+
+/* 所有列表共用一套紧凑、可读的分页节奏，避免系统原生下拉显得突兀。 */
+.app-shell .pagination {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  height: auto;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border, var(--line));
+  background: color-mix(in srgb, var(--card, var(--surface)) 95%, var(--secondary, var(--surface-subtle)));
+  color: var(--muted-foreground, var(--muted));
+  font-size: var(--ui-font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-shell .pagination > span:first-child {
+  margin-right: auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.app-shell .pagination select {
+  min-width: 76px;
+  min-height: 34px;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid var(--input, var(--line));
+  border-radius: calc(var(--radius, 10px) - 2px);
+  appearance: none;
+  background-color: var(--card, var(--surface));
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted-foreground, var(--muted)) 50%), linear-gradient(135deg, var(--muted-foreground, var(--muted)) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 14px, calc(100% - 10px) 14px;
+  background-repeat: no-repeat;
+  background-size: 4px 4px, 4px 4px;
+  color: var(--foreground, var(--ink));
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.app-shell .pagination .page-size-select {
+  /* 下拉是文字控件，不套用方形翻页按钮；标签和箭头始终同一行。 */
+  display: inline-flex;
+  width: max-content;
+  min-width: 112px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--ui-font-body);
+}
+
+.app-shell .pagination select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--input, var(--line)));
+}
+
+.app-shell .pagination select:focus-visible,
+.app-shell .pagination button:focus-visible {
+  outline: 0;
+  border-color: var(--ring, var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring, var(--primary)) 19%, transparent);
+}
+
+.app-shell .pagination button:not(.app-select-trigger),
+.weight-detail > footer .btn.compact {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--input, var(--line));
+  border-radius: calc(var(--radius, 10px) - 2px);
+  background: var(--card, var(--surface));
+  color: var(--foreground, var(--ink));
+  font-size: 18px;
+  line-height: 1;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.app-shell .pagination button:hover:not(:disabled),
+.weight-detail > footer .btn.compact:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--input, var(--line)));
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.app-shell .pagination button:disabled,
+.weight-detail > footer .btn.compact:disabled {
+  cursor: not-allowed;
+  opacity: .44;
+}
+
+.app-shell .pagination b,
+.weight-detail > footer > div > span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 54px;
+  min-height: 34px;
+  padding: 0 9px;
+  border-radius: calc(var(--radius, 10px) - 2px);
+  background: var(--secondary, var(--surface-subtle));
+  color: var(--foreground, var(--ink));
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+
+.app-shell .trend-pagination {
+  min-height: 46px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, var(--line));
+}
+
+.app-shell .trend-pagination > span {
+  padding: 0 8px;
+}
+
+@media (max-width: 720px) {
+  .app-shell .workspace > main {
+    scrollbar-gutter: auto;
+  }
+
+  .app-shell .pagination {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 11px 14px;
+  }
+
+  .app-shell .pagination > span:first-child {
+    flex-basis: 100%;
+    margin-right: 0;
+  }
+}

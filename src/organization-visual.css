@@ -1,0 +1,42 @@
+/*
+ * 企业管理的视觉收口层。
+ *
+ * 组织页包含组织树、成员表和模态表单，历史样式中有少量固定浅色的成功、错误与
+ * 遮罩色。这里将它们收口到 shadcn 语义令牌，使浅/深色皮肤使用相同的层次和对比度。
+ * 本文件只处理显示，不改变审批、成员状态或权限逻辑。
+ */
+.organization-page{color:var(--foreground);background:var(--background)}
+.org-nav{background:var(--secondary);border-color:var(--border)}
+.org-brand>span{background:var(--primary);color:var(--primary-foreground)}
+.org-brand small,.org-nav>p,.org-page-head small,.org-note,.org-table th,.org-table td small,.org-form legend,.org-form small,.org-dim{color:var(--muted-foreground)}
+.org-nav nav a{color:var(--muted-foreground)}
+.org-nav nav a:hover{background:var(--accent);color:var(--accent-foreground)}
+.org-nav nav a.active{background:var(--accent);color:var(--accent-foreground);border-color:color-mix(in srgb,var(--primary) 28%,var(--border))}
+.org-nav nav small{background:var(--warning);color:var(--primary-foreground)}
+.org-hero{background:linear-gradient(125deg,var(--accent),var(--card));border-color:var(--border)}
+.org-summary button,.org-explainer,.org-directory,.org-permission-preview,.org-modal,.org-table-wrap{background:var(--card);color:var(--card-foreground);border-color:var(--border)}
+.org-summary button:hover{border-color:var(--ring);box-shadow:0 8px 24px color-mix(in srgb,var(--ring) 15%,transparent)}
+.org-table th,.member-department-heading th{background:var(--secondary);border-color:var(--border)}
+.org-table td{border-color:var(--border)}
+.org-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 54%,var(--card))}
+.org-directory-list{background:var(--secondary);border-color:var(--border)}
+.org-directory-list nav button{color:var(--foreground)}
+.org-directory-list nav button:hover{background:var(--accent)}
+.org-directory-list nav button.active{background:var(--card);border-color:color-mix(in srgb,var(--primary) 30%,var(--border));color:var(--primary);box-shadow:0 2px 8px color-mix(in srgb,var(--foreground) 8%,transparent)}
+.org-pill{background:var(--secondary);color:var(--muted-foreground)}
+.org-pill.active,.org-created-link{background:var(--success-background);border-color:var(--success-border);color:var(--success)}
+.org-pill.pending{background:var(--warning-background);color:var(--warning)}
+.member-status-button.disabled{background:var(--danger-background);color:var(--danger);border-color:var(--danger-border)}
+.org-permission-preview>label>span{color:var(--success)}
+.org-error{background:var(--danger-background);border-color:var(--danger-border);color:var(--danger)}
+.org-success{background:var(--success-background);border:1px solid var(--success-border);color:var(--success)}
+.organization-page :is(input:not([type=checkbox]),select,textarea),.org-modal :is(input:not([type=checkbox]),select,textarea){background:var(--background);color:var(--foreground);border-color:var(--input)}
+.organization-page :is(input,select,textarea):focus-visible,.org-modal :is(input,select,textarea):focus-visible{outline-color:var(--ring);border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent)}
+.org-modal-shade{background:color-mix(in srgb,#060c19 66%,transparent)}
+.org-modal{box-shadow:0 24px 76px color-mix(in srgb,#060c19 38%,transparent)}
+.org-form fieldset,.org-multi{background:var(--background);border-color:var(--border)}
+.org-project-role>button{color:var(--muted-foreground)}
+.org-main,.org-table-wrap,.org-modal-body{scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-track)}
+.org-main::-webkit-scrollbar-track,.org-table-wrap::-webkit-scrollbar-track,.org-modal-body::-webkit-scrollbar-track{background:var(--scrollbar-track)}
+.org-main::-webkit-scrollbar-thumb,.org-table-wrap::-webkit-scrollbar-thumb,.org-modal-body::-webkit-scrollbar-thumb{background:var(--scrollbar-thumb);border-color:var(--scrollbar-track)}
+.org-main::-webkit-scrollbar-thumb:hover,.org-table-wrap::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--scrollbar-thumb) 74%,var(--foreground))}

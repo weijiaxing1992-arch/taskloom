@@ -1,0 +1,17 @@
+export default {
+ '搜索内容、负责人、开发人员或部门':'Search content, owners, engineers or departments',
+ '搜索标题、编号、负责人或部门':'Search title, ID, owner or department',
+ '搜索内容、人员或部门…':'Search content, people or teams…',
+ '输入标题、编号、负责人、开发人员或部门名称，即时查找相关事项。':'Find items by title, ID, owner, engineer or department name.',
+ '搜索当前项目…':'Search this project…',
+ '清空搜索':'Clear search',
+ '搜索建议':'Search suggestions',
+ '共 {count} 条结果':'{count} results',
+ '输入关键词，即时查找需求、缺陷、迭代与测试。':'Type to find requirements, defects, iterations and tests.',
+ '当前项目没有匹配结果，可查看跨项目结果。':'No matches in this project. You can search across projects.',
+ '↑ ↓ 选择 · Enter 打开 · Esc 关闭':'↑ ↓ Select · Enter Open · Esc Close',
+ '更多跨项目结果':'More results across projects',
+ '搜索结果格式不正确，请重试':'Search returned an invalid response. Please retry.',
+ '搜索暂时不可用，请重试':'Search is temporarily unavailable. Please retry.',
+ '无法打开搜索结果，请重试':'Unable to open this search result. Please retry.',
+} satisfies Record<string,string>

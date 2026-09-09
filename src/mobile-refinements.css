@@ -1,0 +1,136 @@
+/* 手机端只改变布局与触控密度，不隐藏业务操作或改变列表的筛选范围。 */
+.mobile-filter-toggle{display:none}
+.mobile-advanced-filters{display:contents}
+.work-page .mobile-advanced-filters>select{display:block;min-width:0;max-width:230px}
+@layer ui-contract {
+  @media(min-width:761px){
+    .app-shell .btn.mobile-filter-toggle{display:none!important}
+  }
+  @media(max-width:760px){
+    .app-shell .work-tabs button.active,.app-shell .work-sprints button[aria-pressed="true"],
+    .app-shell .notice-groups button.active,.app-shell .work-view-switch button.active,
+    .app-shell .mobile-filter-toggle[aria-expanded="true"] {
+      background:var(--primary-soft)!important;color:var(--primary)!important;border-color:var(--primary)!important;box-shadow:none!important;font-weight:650!important;
+    }
+    .app-shell .work-tabs button.active b{color:var(--primary)!important}
+  }
+}
+@media(max-width:760px){
+  /* 四个跨项目入口已有页面搜索与底部切换，手机不再重复堆放顶部搜索和项目模块导航；完整模块仍从主导航进入。 */
+  .app-shell .mobile-work-hub>.topbar .top-search-widget,.app-shell .mobile-work-hub>.project-nav{display:none}
+  /* 同一结构兼容桌面常驻筛选和手机展开筛选，不重建控件或丢弃用户选择。 */
+  .app-shell .mobile-filter-toggle{display:inline-flex;flex:none;gap:5px;align-items:center;justify-content:center;min-height:44px}
+  .app-shell .mobile-advanced-filters{display:none;width:100%;min-width:0}
+  .app-shell .mobile-advanced-filters.is-expanded{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex-basis:100%;padding-top:8px;border-top:1px solid var(--line)}
+  .app-shell .mobile-advanced-filters>select,.app-shell .mobile-advanced-filters>.notification-filter-select{width:100%;min-width:0;max-width:100%;margin:0}
+  .app-shell .work-page .work-filters{display:flex;gap:8px;flex-wrap:wrap;padding:8px!important}
+  .app-shell .work-page .work-filters>.search{flex:1 1 100%;min-width:0}
+  .app-shell .work-page .work-filters>.result-count{margin-left:auto}
+  .app-shell .work-page .work-tabs{gap:6px;margin-bottom:8px;overscroll-behavior-x:contain}
+  .app-shell .work-page .work-tabs button{min-width:max-content;min-height:44px;padding:7px 10px;gap:8px;border-radius:6px;flex:none;white-space:nowrap}
+  .app-shell .work-page .work-tabs b{font-size:13px}
+  .app-shell .work-page .work-view-switch{padding:2px;border-radius:6px;background:var(--surface);box-shadow:none}
+  .app-shell .work-page .work-list article{grid-template-columns:28px auto minmax(0,1fr) 16px;gap:7px 9px;padding:12px}
+  .app-shell .work-page .work-list article>.object-mark{grid-column:1;grid-row:1/4}
+  .app-shell .work-page .work-list .work-main{grid-column:2/4;grid-row:1}
+  .app-shell .work-page .work-list article>.priority{grid-column:2;grid-row:2}
+  .app-shell .work-page .work-list article>.status{grid-column:3;grid-row:2;justify-self:start;max-width:100%}
+  .app-shell .work-page .work-list article>time{grid-column:2/4;grid-row:3}
+  .app-shell .work-page .work-list article>.chevron{grid-column:4;grid-row:1}
+  .app-shell .work-main b{width:100%;line-height:1.5}
+  .app-shell .work-main p{line-height:1.5;margin-top:4px}
+  .app-shell .search-page .search-hero{padding:0 0 12px;text-align:left;background:transparent}
+  .app-shell .search-page .search-heading{justify-content:space-between;gap:8px;margin-bottom:10px}
+  .app-shell .search-page .search-heading h1{margin:0}
+  .app-shell .work-page .page-heading>.list-export{margin-left:auto}
+  .app-shell .search-page .search-hero h1{margin:4px 0 12px;font-size:20px}
+  .app-shell .search-page .search-filters{margin-top:10px;gap:8px}
+  .app-shell .search-page .search-results{margin:0;padding:8px 0}
+  .app-shell .search-page .search-group>header{padding:10px 12px}
+  .app-shell .search-page .search-group article{padding:12px 10px}
+  .app-shell .search-page .search-group article b{line-height:1.5}
+  .app-shell .notifications-page .notice-groups{flex-wrap:nowrap;overflow-x:auto;max-width:100%;overscroll-behavior-x:contain;padding:8px 0;gap:4px}
+  .app-shell .notifications-page .notice-groups button{white-space:nowrap;flex:none;min-height:44px;padding:6px 9px}
+  .app-shell .notifications-page .notice-groups>span{flex:none;max-width:230px;white-space:normal;margin-left:8px}
+  .app-shell .notifications-page .notice-filters{gap:8px}
+  .app-shell .notifications-page .notice-filters>.notification-filter-select{flex:1 1 calc(100% - 100px);min-width:0}
+  .app-shell .notifications-page .notice-filters>.result-count{font-size:12px;flex:1 1 50%;margin:0}
+  .app-shell .notifications-page .notification-list article{padding:12px 10px;gap:7px}
+  .app-shell .notifications-page .notification-list article header b{line-height:1.5}
+  .app-shell .notifications-page .notification-list article p{white-space:pre-wrap;line-height:1.6}
+  .app-shell .projects-page .project-status-tabs{margin:8px 0;padding-bottom:6px;gap:6px}
+  .app-shell .projects-page .project-card{padding:14px;border-radius:8px;box-shadow:none;transform:none}
+  .app-shell .projects-page .project-title{flex-wrap:wrap;gap:4px 8px}
+  .app-shell .projects-page .project-title h2{font-size:16px;line-height:1.5}
+  .app-shell .projects-page .project-metrics{padding:10px 4px;margin:12px 0;gap:4px}
+  .app-shell .projects-page .project-card footer{gap:6px 10px;font-size:12px}
+  .app-shell .projects-page .project-card-actions{width:100%;justify-content:flex-end;gap:12px;border-top:1px solid var(--line);padding-top:4px}
+  .app-shell .projects-page .recent-content{padding:12px;margin-top:16px;border-radius:8px}
+  .app-shell .projects-page .recent-content-item{padding:10px;border-radius:6px;box-shadow:none;transform:none}
+}
+@media (max-width: 820px) {
+  :root { --ui-control-height: 44px; }
+}
+@layer ui-contract {
+  /* 位于同一控件层中，确保选中态不被普通按钮的强制背景覆盖。 */
+  .btn.sprint-related-toggle[aria-pressed="true"] {
+    background: var(--primary) !important;
+    color: var(--primary-foreground) !important;
+    border-color: var(--primary) !important;
+    font-weight: 700 !important;
+  }
+  .btn.sprint-related-toggle[aria-pressed="true"]::before { content: "✓"; }
+  @media (max-width: 760px) {
+    :is(input, select, textarea):not([type="checkbox"], [type="radio"], .rich-document *, .rich-content *) {
+      font-size: max(16px, var(--ui-font-body)) !important;
+    }
+  }
+}
+@media (max-width: 760px) {
+  /* 避免 flex 子项的默认最小内容宽度把整个页面撑到屏幕之外。 */
+  .workspace, .main, .module-page, .list-pane, .iteration-main, .profile-content,
+  .help-center, .help-reader, .help-workspace { min-width: 0; max-width: 100%; }
+  .topbar { column-gap: 8px; row-gap: 6px; padding-inline: 12px; }
+  .topbar .top-search { min-width: 0; width: 100%; max-width: none; }
+  .project-nav { overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .project-nav > * { flex-shrink: 0; }
+  .module-page, .profile-page { padding: 12px !important; }
+  .module-page > header, .module-header, .page-header,
+  .configurable-sprint-toolbar, .my-work-toolbar { flex-wrap: wrap; gap: 8px; }
+  .configurable-sprint-toolbar .search, .module-header .search { flex: 1 1 180px; min-width: 0; max-width: 100%; }
+  .configurable-sprint-toolbar input { min-width: 0; max-width: 100%; }
+  .iteration-content { padding: 12px; }
+  .table-wrap, .req-table-wrap, .configurable-sprint-table {
+    max-width: 100%; overscroll-behavior-x: contain; scrollbar-width: thin;
+  }
+  .profile-panel { min-width: 0; padding: 16px; }
+  .profile-panel > header, .profile-panel footer, .security-summary { flex-wrap: wrap; gap: 12px; }
+  .profile-panel form, .profile-panel input, .password-form { max-width: 100%; min-width: 0; }
+  .membership-section article { flex-wrap: wrap; overflow-wrap: anywhere; }
+  .help-center { padding: 12px; gap: 10px; }
+  .help-toolbar { align-items: stretch; }
+  .help-search { width: 100%; min-width: 0; }
+  .help-document-nav { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; }
+  .help-document-nav a { flex-shrink: 0; min-height: 44px; display: inline-flex; align-items: center; }
+  .help-reading-toolbar { flex-wrap: wrap; gap: 8px; }
+  .help-reader { overscroll-behavior-y: contain; }
+  .help-reader pre, .rich-content pre, .rich-document pre { max-width: 100%; overflow-x: auto; }
+  .help-reader p, .help-reader li, .attachment-name { overflow-wrap: anywhere; }
+  .help-reader img, .rich-content img, .rich-document img { max-width: 100%; height: auto; }
+  /* 弹层保留自己的滚动区，底部操作避开 iPhone 手势区域和软键盘。 */
+  .modal, .test-modal, .help-dialog { max-height: calc(100dvh - 24px); overflow-y: auto; }
+  .drawer-body { min-height: 0; overscroll-behavior-y: contain; }
+  .drawer-footer, .editor-footer { padding-bottom: max(12px, env(safe-area-inset-bottom)); flex-wrap: wrap; gap: 8px; }
+  .requirement-editor .editor-head { padding: 12px 20px; gap: 8px; }
+  .requirement-editor .editor-head-actions { margin-left: 0; width: 100%; justify-content: flex-start; }
+  .requirement-editor .editor-head-actions .draft-tools-bar > div { width: auto; }
+  .requirement-editor .editor-head-actions .btn { flex: 0 0 auto; white-space: nowrap; }
+  .app-shell .requirement-editor .capture-toolbar { padding: 12px 20px; display: grid; grid-template-columns: auto 72px minmax(0,1fr); }
+  .app-shell .requirement-editor .capture-toolbar > span { grid-column: 1 / -1; }
+  .app-shell .requirement-editor .capture-toolbar > label { align-self: center; }
+  .app-shell .requirement-editor .capture-toolbar > button { justify-self: end; white-space: nowrap; }
+  .app-shell .requirement-editor .capture-toolbar > span + button { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sprint-related-toggle { transition: none; }
+}

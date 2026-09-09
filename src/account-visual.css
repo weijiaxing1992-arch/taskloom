@@ -1,0 +1,88 @@
+/*
+ * 账号、个人中心与公开加入页的视觉收口层。
+ *
+ * 这些页面在未进入工作台前也要能切换深色皮肤，因此不依赖侧边栏或业务模块的
+ * 背景色。所有可读内容、表面、状态提示和焦点环均使用同一套 shadcn 语义令牌。
+ */
+.auth-loading,.login-page,.initial-password-page,.join-page{
+  color:var(--foreground);
+  background:radial-gradient(circle at 50% 4%,color-mix(in srgb,var(--accent) 72%,transparent),transparent 40%),var(--canvas);
+}
+.login-brand strong,.login-card h1,.profile-identity h2,.profile-panel h2,.initial-password-card h1{color:var(--foreground)}
+.login-brand small,.login-card header p,.login-card label,.login-card footer,.profile-identity p,.profile-panel>header p,.avatar-editor p,.profile-form-grid label,.profile-form-grid label>small,.profile-form>footer,.preferences-form>footer,.security-summary p,.password-form>label,.password-strength span,.password-rules span,.preferences-form label p,.membership-section>div>p,.membership-section>article small,.initial-password-intro,.initial-password-note,.initial-password-policy{color:var(--muted-foreground)}
+.login-card,.initial-password-card,.join-card,.profile-sidebar,.profile-panel{
+  background:var(--card);
+  color:var(--card-foreground);
+  border-color:var(--border);
+  box-shadow:0 16px 44px color-mix(in srgb,#060c19 12%,transparent);
+}
+.login-card header span,.login-slogan,.initial-password-eyebrow,.join-kicker{color:var(--primary)}
+.login-card input,.initial-password-card input,.join-card :is(input,select),.profile-form-grid :is(input,textarea),.password-input,.preferences-form select{
+  color:var(--foreground);
+  background:var(--background);
+  border-color:var(--input);
+}
+.login-card input:focus-visible,.initial-password-card input:focus-visible,.join-card :is(input,select):focus-visible,.profile-form-grid :is(input,textarea):focus-visible,.password-input:focus-within,.preferences-form select:focus-visible{
+  outline:2px solid var(--ring);
+  outline-offset:2px;
+  border-color:var(--ring);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+.login-recent{background:var(--secondary);border-color:var(--border)}
+.login-recent button{color:var(--primary)}
+.login-error,.initial-password-error{background:var(--danger-background);border-color:var(--danger-border);color:var(--danger)}
+
+/* 个人中心：卡片层级、侧栏选中态与安全状态在浅/深色下保持同一信息密度。 */
+.profile-identity{background:linear-gradient(155deg,var(--card) 44%,var(--accent));border-color:var(--border)}
+.profile-avatar{box-shadow:0 9px 22px color-mix(in srgb,#060c19 18%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--card) 45%,transparent)}
+.profile-sidebar nav button{color:var(--muted-foreground)}
+.profile-sidebar nav button b{color:var(--muted-foreground)}
+.profile-sidebar nav button:hover{background:var(--secondary);color:var(--foreground)}
+.profile-sidebar nav button.active{background:var(--accent);color:var(--accent-foreground)}
+.profile-sidebar nav button.active b{color:var(--accent-foreground)}
+.profile-org{border-color:var(--border)}
+.profile-org span,.profile-org small{color:var(--muted-foreground)}
+.account-state{background:var(--success-background);color:var(--success)}
+.account-state i{background:var(--success)}
+.profile-message.success{background:var(--success-background);border-color:var(--success-border);color:var(--success)}
+.profile-message.error{background:var(--danger-background);border-color:var(--danger-border);color:var(--danger)}
+.profile-panel>header{border-color:var(--border)}
+.profile-section-mark{background:var(--accent);color:var(--accent-foreground)}
+.profile-section-mark.secure{background:var(--success-background);color:var(--success)}
+.profile-form-grid label>span b{color:var(--danger)}
+.profile-form-grid .readonly-field input{background:var(--secondary);color:var(--muted-foreground)}
+.security-summary{background:var(--success-background);border-color:var(--success-border)}
+.security-summary>span,.security-summary em{background:color-mix(in srgb,var(--success) 14%,var(--success-background));color:var(--success)}
+.password-input button{color:var(--primary)}
+.password-strength i{background:var(--secondary)}
+.password-strength i.on{background:var(--success)}
+.password-rules span.met{color:var(--success)}
+.preference-toggle>span{background:var(--input)}
+.preference-toggle>span:after{background:var(--card);box-shadow:0 1px 3px color-mix(in srgb,#060c19 30%,transparent)}
+.preference-toggle input:checked+span{background:var(--primary)}
+.preference-toggle input:focus-visible+span{outline-color:var(--ring)}
+.membership-section>article{background:var(--card);border-color:var(--border)}
+.membership-section>article>span{background:var(--accent);color:var(--accent-foreground)}
+.membership-section>article em{background:var(--secondary);color:var(--muted-foreground)}
+
+/* 公开加入、首次改密和登录页的按钮/提示沿用同一对比度规则。 */
+.join-brand>span,.initial-password-mark{background:var(--primary);color:var(--primary-foreground)}
+.join-card,.initial-password-card{box-shadow:0 18px 52px color-mix(in srgb,#060c19 13%,transparent)}
+.join-info{background:var(--secondary);color:var(--muted-foreground)}
+.join-page .join-error{color:var(--danger)}
+.initial-password-logout{color:var(--primary)}
+
+/* 原生下拉框在暗色皮肤由浏览器单独绘制，显式收口菜单底色与已选中可读性。 */
+:root[data-theme="dark"] :is(.login-page,.profile-page,.initial-password-page,.join-page) select{
+  background-color:var(--popover);
+  color:var(--popover-foreground);
+  border-color:var(--input);
+}
+:root[data-theme="dark"] :is(.login-page,.profile-page,.initial-password-page,.join-page) :is(select option,select optgroup){
+  background:var(--popover);
+  color:var(--popover-foreground);
+}
+:root[data-theme="dark"] :is(.login-page,.profile-page,.initial-password-page,.join-page) select option:checked{
+  background:var(--control-selected);
+  color:var(--control-selected-text);
+}

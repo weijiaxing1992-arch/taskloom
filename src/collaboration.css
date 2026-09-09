@@ -1,0 +1,183 @@
+/* A light collaborative-workspace refresh. Route layout, data colors, and the
+   account-scoped dark mode/font scale remain owned by their existing modules. */
+:root {
+  --primary: #3370eb;
+  --primary-soft: #eaf1ff;
+  --control-selected: #3370eb;
+  --control-selected-text: #fff;
+  --nav-surface: #f5f6f8;
+  --nav-hover: #e9edf3;
+  --nav-text: #4b5567;
+  --nav-selected: #e2ebff;
+  --nav-selected-text: #245bce;
+  --action-fill: #3370eb;
+  --action-hover: #245bce;
+  --action-text: #fff;
+  --table-hover: #f5f8ff;
+  --ui-radius: .5rem;
+}
+:root[data-theme="dark"] {
+  --primary: #91b8ff;
+  --primary-soft: #253652;
+  --control-selected: #356cd0;
+  --nav-surface: #131c2b;
+  --nav-hover: #202d42;
+  --nav-text: #b9c6d9;
+  --nav-selected: #263c60;
+  --nav-selected-text: #b4ceff;
+  --action-fill: #356cd0;
+  --action-hover: #417de5;
+  --action-text: #fff;
+  --table-hover: #202e43;
+  --ui-primary-foreground: #142138;
+}
+
+.app-shell .rail {
+  flex-shrink: 0;
+  color: var(--ink);
+  background: var(--nav-surface);
+  border-right: 1px solid var(--line);
+  padding: 20px 12px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.app-shell .rail > * { flex-shrink: 0; }
+.app-shell .brand { padding: 2px 10px 22px; gap: 10px; }
+.app-shell .brand strong { color: var(--ink); font-weight: 650; letter-spacing: -.4px; }
+.app-shell .brand-mark { border-radius: 9px; background: #3370eb; box-shadow: none; }
+.app-shell :is(.brand small,.tenant small,.current-user small) { color: var(--muted); }
+.app-shell .tenant {
+  padding: 11px 10px;
+  margin: 0 0 17px;
+  border-color: var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.app-shell .tenant > div { min-width: 0; }
+.app-shell .tenant b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.app-shell .tenant .avatar { border-radius: 7px; background: var(--primary-soft); color: var(--primary); }
+.app-shell .nav-section-label {
+  margin: 0;
+  padding: 0 12px 6px;
+  color: var(--muted);
+  font-size: calc(11px * var(--devflow-font-scale,1));
+  font-weight: 500;
+  line-height: 1.6;
+}
+.app-shell .nav-section-spaced { margin-top: 20px; }
+.app-shell .global-nav { gap: 3px; }
+.app-shell .rail :is(.global-nav a,.rail-bottom > a) {
+  color: var(--nav-text);
+  border-radius: 6px;
+  padding: 10px 12px;
+  transition: color .15s, background-color .15s;
+}
+.app-shell .rail :is(.global-nav a,.rail-bottom > a):hover { background: var(--nav-hover); color: var(--ink); }
+.app-shell .rail :is(.global-nav a,.rail-bottom > a).router-link-active {
+  background: var(--nav-selected);
+  color: var(--nav-selected-text);
+  font-weight: 600;
+}
+.app-shell .global-nav .svg-icon { width: 17px; height: 17px; }
+.app-shell .global-nav kbd { color: var(--muted); border-color: var(--line); background: var(--surface); }
+.app-shell .rail-bottom { border-top: 0; padding-top: 24px; }
+.app-shell .brand-slogan {
+  margin: 0 10px 20px;
+  padding-left: 10px;
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: calc(11px * var(--devflow-font-scale,1));
+}
+.app-shell .rail-bottom > .current-user {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.app-shell .current-user > div { flex: 1; min-width: 0; }
+.app-shell .current-user b { display: block; overflow: hidden; text-overflow: ellipsis; font-weight: 550; }
+.app-shell .rail-logout { color: var(--muted); padding-inline: 12px; }
+.app-shell .rail-logout:hover { color: var(--ink); background: var(--nav-hover); }
+.app-shell .mobile-nav-close { background: var(--nav-hover); color: var(--ink); }
+
+.app-shell .workspace > .topbar {
+  min-height: 58px;
+  flex-shrink: 0;
+  background: var(--surface);
+  box-shadow: none;
+}
+.app-shell .project-icon { background: var(--primary-soft); color: var(--primary); border-radius: 7px; }
+.app-shell .project-switcher select { color: var(--ink); font-weight: 600; }
+.app-shell .project-nav {
+  flex-shrink: 0;
+  height: 50px;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface);
+}
+.app-shell .project-nav-label {
+  flex-shrink: 0;
+  padding-right: 16px;
+  color: var(--muted);
+  font-size: calc(11px * var(--devflow-font-scale,1));
+}
+.app-shell .project-nav a {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 13px;
+  color: var(--nav-text);
+  border: 0;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.app-shell .project-nav a:hover { color: var(--primary); background: var(--surface-subtle); }
+.app-shell .project-nav a.router-link-active { color: var(--primary); background: var(--primary-soft); font-weight: 600; }
+
+.app-shell .btn { border-radius: 6px; box-shadow: none; }
+.app-shell .btn:not(.primary):not(.danger):not(.danger-outline):not(.danger-category):not(.ghost) { border-color: var(--line); color: var(--ink); background: var(--surface); }
+.app-shell .btn:not(:disabled):not(.primary):not(.danger):not(.danger-outline):not(.danger-category):hover { background: var(--surface-subtle); border-color: var(--muted); }
+:root .app-shell .btn.primary { color: var(--action-text); background: var(--action-fill); border-color: var(--action-fill); box-shadow: none; }
+:root .app-shell .btn.primary:not(:disabled):hover { background: var(--action-hover); border-color: var(--action-hover); }
+.app-shell :is(.btn,.global-nav a,.rail-bottom > a,.project-nav a):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.app-shell :is(.card,.table-card) { border-color: var(--line); border-radius: 8px; box-shadow: none; }
+.app-shell :is(.card th,.req-table th) { background: var(--surface-subtle); color: var(--muted); font-weight: 550; }
+.app-shell :is(.table-card tbody tr,.req-table tbody tr):not(.selected):not(.released):hover { background: var(--table-hover); }
+.app-shell .req-table tr.selected { background: var(--primary-soft); }
+.app-shell :is(.req-view-switch,.segmented,.module-tabs) { border-radius: 6px; }
+.app-shell :is(.req-view-switch,.segmented,.module-tabs) button { border-radius: 4px; }
+.app-shell :is(.req-view-switch,.segmented,.module-tabs) button.active { color: var(--primary); background: var(--primary-soft); box-shadow: none; }
+.app-shell .eyebrow { color: var(--muted); letter-spacing: .04em; font-weight: 550; }
+.app-shell :is(.list-heading h1,.page-heading h1,.editor-head h1) { letter-spacing: -.4px; font-weight: 650; }
+.app-shell .type-icon { background: #3370eb; }
+
+/* Secondary navigation retains its existing width, collapse and resize rules. */
+.app-shell .requirements-v4 .requirements-sidebar { background: var(--surface); }
+.app-shell .requirements-sidebar .pool-brand > span { border-radius: 7px; background: var(--primary-soft); color: var(--primary); }
+.app-shell .requirements-sidebar .pool-views > button.active { color: var(--primary); background: var(--primary-soft); }
+.app-shell .requirements-sidebar .pool-views > button.active em { color: var(--primary); background: var(--surface); }
+.app-shell .requirements-sidebar .category-folder.active { background: var(--primary-soft); }
+.app-shell .requirements-sidebar .category-folder.active :is(.category-select,.svg-icon) { color: var(--primary); }
+.app-shell .requirements-sidebar :is(.category-folder,.pool-views > button):hover { background: var(--surface-subtle); }
+.app-shell .requirements-sidebar .new-category-link { color: var(--primary); border-color: var(--line); }
+.app-shell .requirements-sidebar .new-category-link:hover { background: var(--primary-soft); }
+.app-shell .pool-heading > .btn.primary { background: var(--action-fill)!important; }
+.app-shell .pool-heading > .btn.primary:not(:disabled):hover { background: var(--action-hover)!important; }
+.app-shell .requirements-v4 .req-toolbar { background: var(--surface-subtle); border-color: var(--line); }
+.app-shell .iteration-tabs button.active { color: var(--primary); border-color: var(--primary); }
+.app-shell .project-card { border-color: var(--line); border-radius: 9px; box-shadow: none; }
+.app-shell .project-card:hover { border-color: var(--primary); box-shadow: 0 2px 10px color-mix(in srgb,var(--ink) 7%,transparent); }
+.app-shell .project-card .project-metrics { background: var(--surface-subtle); border-radius: 6px; }
+
+@media (max-width: 1024px) {
+  .app-shell .project-nav { overflow-x: auto; padding-inline: 16px; }
+  .app-shell .project-nav-label { display: none; }
+  .app-shell .project-nav a { min-height: 38px; }
+  .app-shell .global-nav a { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .rail :is(.global-nav a,.rail-bottom > a) { transition: none; }
+}
+/* Shared by plain remarks, rich descriptions and all comment composers. */
+.mention-recency{display:inline-block!important;margin-left:5px;padding:1px 5px;border-radius:4px;background:var(--primary-soft,#eef4ff);color:var(--primary,#3370eb);font-size:10px!important;font-weight:500;vertical-align:middle}

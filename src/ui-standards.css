@@ -1,0 +1,212 @@
+/*
+ * 全站控件契约：此层必须最先声明。
+ * 项目同时存在局部 CSS 和 important Tailwind 工具类，因此只在这一个命名层
+ * 固定字号、控件尺寸和交互外观。业务页仍负责宽度、排列、滚动和状态颜色。
+ * 不给卡片按钮、树节点、日历格子强制统一高度；不改用户富文本内容。
+ */
+@layer ui-contract;
+
+:root {
+  --ui-font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-caption: calc(12px * var(--devflow-font-scale, 1));
+  --ui-font-body: calc(14px * var(--devflow-font-scale, 1));
+  --ui-font-section: calc(16px * var(--devflow-font-scale, 1));
+  --ui-font-subtitle: calc(18px * var(--devflow-font-scale, 1));
+  --ui-font-title: calc(20px * var(--devflow-font-scale, 1));
+  --ui-font-display: calc(24px * var(--devflow-font-scale, 1));
+  --ui-control-height: 32px;
+  --ui-control-radius: 6px;
+  --ui-control-padding: 10px;
+}
+
+/* 变量与基础值保持同一层级，避免未分层的桌面值覆盖移动端尺寸。 */
+@media(max-width:820px) {
+  :root { --ui-control-height: 40px; }
+}
+
+@layer ui-contract {
+  body { font-family: var(--ui-font-family) !important; font-size: var(--ui-font-body) !important; }
+
+  /* 文字动作、下拉选项、表格内操作与实体按钮用相同字号，但保持各自语义。 */
+  :is(button, .btn, [data-slot="button"], input, select, textarea):not(.rich-document *, .rich-content *) {
+    font-family: var(--ui-font-family) !important;
+    font-size: var(--ui-font-body) !important;
+    letter-spacing: normal !important;
+  }
+  :is(button, .btn, [data-slot="button"]):not(.rich-document *, .rich-content *, .rich-toolbar .bold) {
+    font-weight: 500 !important; line-height: 1.25 !important; box-shadow: none !important;
+  }
+  :is(button, .btn)>:is(span, b, strong):not(.avatar, .icon, .type-icon, .top-search-type, .project-icon, .draft-count, .number-badge, .notification-badge, .test-count, .compact-heading-count, .sprint-filter-count) {
+    font-size: inherit !important;
+  }
+  :is(h1,h2,h3,h4):not(.rich-content *, .rich-document *) { line-height: 1.4 !important; font-weight: 600 !important; }
+  h1:not(.rich-content *, .rich-document *) { font-size: var(--ui-font-title) !important; }
+  h2:not(.rich-content *, .rich-document *) { font-size: var(--ui-font-subtitle) !important; }
+  :is(h3,h4):not(.rich-content *, .rich-document *) { font-size: var(--ui-font-section) !important; }
+  :is(th, td):not(.rich-content *, .rich-document *) { font-size: var(--ui-font-body) !important; }
+  th:not(.rich-content *, .rich-document *) { font-weight: 500 !important; }
+  :is(small, .field-error, .test-muted, .muted, .hint):not(.rich-content *, .rich-document *) {
+    font-size: var(--ui-font-caption) !important;
+  }
+
+  /* 所有普通动作与单行字段统一为 32px；移动设备统一提高到 40px。 */
+  :is(.btn, [data-slot="button"], .app-select-trigger, .status-filter-trigger,
+      .member-filter-trigger, .create-sprint-button, .favorite-toggle, .transition-trigger,
+      .test-ai-button, .test-filter-mine, .defect-mine-filter, .test-page-button,
+      .test-add-step, .field-delete-action, .field-delete-confirm) {
+    height: var(--ui-control-height) !important; min-height: var(--ui-control-height) !important;
+    padding: 4px var(--ui-control-padding) !important;
+    border-radius: var(--ui-control-radius) !important;
+    box-shadow: none !important; box-sizing: border-box !important;
+    line-height: 1.25 !important; text-decoration: none !important;
+  }
+  :is(.btn, [data-slot="button"]) {
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    gap: 6px !important; border-width: 1px !important; border-style: solid !important;
+    font-weight: 500 !important;
+  }
+  :is(.btn, [data-slot="button"]):not(.primary, .danger, .danger-outline, .ghost,
+      [data-variant="default"], [data-variant="destructive"], [data-variant="secondary"], [data-variant="ghost"], [data-variant="link"]) {
+    background: var(--card) !important; color: var(--foreground) !important; border-color: var(--border) !important;
+  }
+  :is(.btn.primary, [data-slot="button"][data-variant="default"]) {
+    background: var(--primary) !important; color: var(--primary-foreground) !important; border-color: var(--primary) !important;
+  }
+  :is(.btn.danger, [data-slot="button"][data-variant="destructive"]) {
+    background: var(--destructive) !important; color: var(--destructive-foreground) !important; border-color: var(--destructive) !important;
+  }
+  .btn.danger-outline { background: var(--card) !important; color: var(--destructive) !important; border-color: var(--danger-border) !important; }
+  :is(.btn.ghost, [data-variant="ghost"], [data-variant="link"]) { background: transparent !important; border-color: transparent !important; }
+  :is(.btn, [data-slot="button"]):not(:disabled):hover { filter: brightness(.97); }
+  :is(.btn, [data-slot="button"]):not(:disabled):active { filter: brightness(.94); }
+  :is(button, .btn):disabled { cursor: not-allowed !important; opacity: .45 !important; }
+
+  /* 图标按钮保持方形；关闭、复制、收藏等不能随页面局部字号任意变大。 */
+  :is([data-slot="button"][data-size^="icon"], .test-icon-button, .test-icon-btn,
+      .plain-icon, .icon-btn, .test-page-button, .pagination>button:not(.app-select-trigger)) {
+    width: var(--ui-control-height) !important; min-width: var(--ui-control-height) !important;
+    height: var(--ui-control-height) !important; min-height: var(--ui-control-height) !important;
+    padding: 0 !important; border-radius: var(--ui-control-radius) !important;
+  }
+  [data-slot="button"][data-size="lg"] { min-height: 40px !important; height: 40px !important; padding-inline: 16px !important; }
+  .drawer-title>div>:is(button,a), .drawer-title>button {
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    min-height: var(--ui-control-height) !important; height: var(--ui-control-height) !important;
+    padding: 4px 8px !important; border-radius: var(--ui-control-radius) !important;
+    font-size: var(--ui-font-body) !important; line-height: 1.25 !important;
+  }
+
+  /* 普通输入、表单下拉与页面搜索共用一层实线边框。排除非文本原生控件。 */
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]):not(.rich-document *),
+  select:not(.rich-document *) {
+    appearance: none !important; -webkit-appearance: none !important;
+    height: var(--ui-control-height) !important; min-height: var(--ui-control-height) !important;
+    padding: 4px var(--ui-control-padding) !important; line-height: 1.25 !important;
+    border: 1px solid var(--input) !important; border-radius: var(--ui-control-radius) !important;
+    background-color: var(--card) !important; color: var(--foreground) !important;
+    box-shadow: none !important; box-sizing: border-box !important;
+  }
+  textarea:not(.rich-document *) {
+    border: 1px solid var(--input) !important; border-radius: var(--ui-control-radius) !important;
+    background: var(--card) !important; color: var(--foreground) !important;
+    padding: 8px 10px !important; line-height: 1.6 !important; box-shadow: none !important;
+  }
+  select:not([multiple], [size]) {
+    padding-right: 28px !important;
+    background-image: linear-gradient(45deg,transparent 50%,var(--muted-foreground) 50%),linear-gradient(135deg,var(--muted-foreground) 50%,transparent 50%) !important;
+    background-size: 4px 4px !important; background-position: calc(100% - 14px) 50%,calc(100% - 10px) 50% !important;
+    background-repeat: no-repeat !important;
+  }
+  select:is([multiple], [size]) { height: auto !important; }
+  input::placeholder, textarea::placeholder { color: var(--muted-foreground) !important; opacity: 1 !important; font: inherit !important; }
+
+  :is(.search, .category-search, .test-search, .test-rail-search, .top-search-input, .global-search-box, .member-search, .date-picker-field) {
+    height: var(--ui-control-height) !important; min-height: var(--ui-control-height) !important;
+    padding: 0 var(--ui-control-padding) !important; gap: 6px !important;
+    border: 1px solid var(--input) !important; border-radius: var(--ui-control-radius) !important;
+    background: var(--card) !important; box-shadow: none !important;
+  }
+  :root body :is(.search, .category-search, .test-search, .test-rail-search, .top-search-input, .global-search-box, .member-search, .date-picker-field) input {
+    flex: 1 1 auto !important; min-width: 0 !important;
+    height: 100% !important; min-height: 0 !important; padding: 0 !important;
+    border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important;
+  }
+  /* 搜索布局按容器分层：工具栏保证提示可读，目录栏和弹层遵循父级宽度。
+     不匹配类名片段，避免把带标签的 dependency-search 和日期选择器改成横排。 */
+  :is(.search, .category-search, .test-search, .test-rail-search, .top-search-input, .global-search-box, .member-search, .help-search) {
+    display: flex !important; align-items: center !important;
+    min-width: 0 !important; max-width: 100% !important; box-sizing: border-box !important;
+    font-size: var(--ui-font-body) !important;
+  }
+  :is(.search, .test-search) {
+    width: min(100%, var(--search-width, 24em)) !important; min-width: min(100%, var(--search-min-width, 20em)) !important;
+    max-width: min(100%, var(--search-max-width, 30em)) !important; flex: 1 1 var(--search-width, 24em) !important;
+  }
+  :root body :is(.search, .category-search, .test-search, .test-rail-search, .top-search-input, .global-search-box, .member-search, .help-search) input {
+    width: 0 !important; flex: 1 1 0% !important; text-overflow: ellipsis !important;
+  }
+  :is(.search, .category-search, .test-search, .test-rail-search, .top-search-input, .global-search-box, .help-search) > svg {
+    width: 16px !important; height: 16px !important; flex: 0 0 16px !important;
+    color: var(--muted-foreground) !important;
+  }
+  /* 裸搜索框保留直接子元素关系，人员选择、字段列表等现有 flex/grid 不被包装破坏。 */
+  input[type="search"], .sprint-search-input, .transition-search {
+    min-width: 0 !important; max-width: 100% !important; text-overflow: ellipsis !important;
+  }
+  .sprint-search-input { width: min(100%, 24em) !important; flex: 1 1 20em !important; }
+  :is(.org-filters, .field-toolbar, .members-toolbar, .workload-detail-controls) > input {
+    width: min(100%, 24em) !important; min-width: min(100%, 18em) !important;
+    max-width: min(100%, 30em) !important; flex: 1 1 20em !important;
+  }
+  :is(.org-filters, .members-toolbar, .field-toolbar, .workload-detail-controls, .sprint-toolbar-primary) {
+    min-width: 0; flex-wrap: wrap;
+  }
+  :is(input,select,textarea):disabled { background-color: var(--secondary) !important; color: var(--muted-foreground) !important; cursor: not-allowed !important; }
+  .date-picker-field { padding-right: 38px !important; }
+  :is(input, select, textarea)[aria-invalid="true"], .date-picker-invalid .date-picker-field {
+    border-color: var(--destructive) !important;
+  }
+  :is(.member-options, .top-search-popup, .requirement-picker-popover, .app-select-menu, .transition-menu, .status-filter-menu) {
+    border-radius: var(--ui-control-radius) !important; box-shadow: none !important;
+  }
+  :is(.app-select-option, .transition-option, .member-options [role="option"]) {
+    min-height: var(--ui-control-height) !important; line-height: 1.5 !important;
+    border-radius: 4px !important;
+  }
+  /* 保留状态/严重度色彩，统一的是尺寸和字阶，不把语义色抹掉。 */
+  :is(.app-select-trigger, .status-filter-trigger, .member-filter-trigger) { line-height: 1.25 !important; }
+  :is(button,a,input,select,textarea):not(.rich-document *):focus-visible {
+    outline: 2px solid var(--ring) !important; outline-offset: 2px !important; box-shadow: none !important;
+  }
+  :is(.search, .category-search, .test-search, .test-rail-search, .top-search-input, .global-search-box, .member-search, .date-picker-field):focus-within {
+    outline: 2px solid var(--ring) !important; outline-offset: 2px !important; box-shadow: none !important;
+  }
+  :is(.search, .category-search, .test-search, .test-rail-search, .top-search-input, .global-search-box, .member-search, .date-picker-field) input:focus-visible { outline: none !important; }
+  @media(max-width:820px) {
+    /* 移动端文本输入至少 16px，避免系统在聚焦时自动放大页面。 */
+    input:not([type="checkbox"], [type="radio"]), select, textarea { font-size: max(16px,var(--ui-font-body)) !important; }
+    :is(.search, .test-search) { width: 100% !important; min-width: 0 !important; max-width: 100% !important; flex-basis: 100% !important; }
+    :is(.org-filters, .field-toolbar, .members-toolbar, .workload-detail-controls) > input {
+      width: 100% !important; min-width: 0 !important; max-width: 100% !important; flex-basis: 100% !important;
+    }
+  }
+  @media(prefers-reduced-motion:reduce) {
+    :is(button, .btn, input, select, textarea) { transition: none !important; }
+  }
+}
+/* 搜索命中文字使用绘制层黄色标记，不改变字号、布局和复制内容。 */
+::highlight(devflow-search){background-color:#ffe66d;color:#292200;text-decoration:none}
+@layer ui-contract {
+ /* 数字徽标不继承按钮的大字号；使用随字体扩展的胶囊，避免 2/99+ 被裁切。 */
+ :is(.number-badge,.notification-badge,.draft-count,.test-count,.compact-heading-count,.sprint-filter-count){display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;flex:0 0 auto!important;width:auto!important;min-width:1.7em!important;height:auto!important;min-height:1.7em!important;padding:0 .4em!important;font-size:var(--ui-font-caption)!important;line-height:1.3!important;font-style:normal!important;font-weight:600!important;font-variant-numeric:tabular-nums;white-space:nowrap!important;word-break:normal!important;overflow:visible!important;border-radius:999px!important;vertical-align:middle}
+ :is(.result-count,.audit-count,.tapd-source-count){font-variant-numeric:tabular-nums;white-space:nowrap}
+}
+/* AI 操作共享蓝紫渐变和魔法棒，保持扁平化；禁用态仍保留身份颜色。 */
+@layer ui-contract {
+button.ai-action[data-slot="button"]{background:linear-gradient(110deg,#4158c9,#813bb5)!important;color:#fff!important;border:1px solid transparent!important;box-shadow:none!important;gap:6px;min-width:0;max-width:100%;font-size:12px!important;font-weight:600;line-height:1.4}
+button.ai-action[data-slot="button"]:hover:not(:disabled){background:linear-gradient(110deg,#3448b2,#6e2f9d)!important}
+button.ai-action[data-slot="button"]:focus-visible{outline:2px solid #8054c5!important;outline-offset:3px}
+button.ai-action[data-slot="button"]:disabled{opacity:.6!important;cursor:not-allowed}
+button.ai-action .ai-wand{width:16px!important;height:16px!important;flex-shrink:0}
+@media(max-width:820px){button.ai-action[data-slot="button"]{min-height:40px;height:auto;white-space:normal;padding:8px 10px;font-size:13px!important}}
+}

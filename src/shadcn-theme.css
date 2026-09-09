@@ -1,0 +1,245 @@
+/*
+ * shadcn 风格的视觉基础层。
+ *
+ * 此文件刻意不引入 Tailwind Preflight，也不重置任意标签。TaskLoom 仍有较多
+ * 使用局部 CSS 的成熟业务页面，全局替换布局规则会让后续升级风险很高。因此这里只
+ * 提供 shadcn-vue/Tailwind 使用的语义令牌，并温和对齐通用旧控件。
+ *
+ * 令牌桥接：
+ * - shadcn 名称（--background、--card、--popover 等）供新组件使用；
+ * - 既有名称（--surface、--ink、--line 等）继续兼容旧页面。
+ * 两组令牌均从账号范围的浅色/深色皮肤中解析。
+ */
+
+:root {
+  /* 标准 shadcn 语义令牌：保留产品蓝色识别，同时采用中性表面和克制的边框。 */
+  --background: #ffffff;
+  --foreground: #172033;
+  --card: #ffffff;
+  --card-foreground: #172033;
+  --popover: #ffffff;
+  --popover-foreground: #172033;
+  --primary: #3370eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f6f8fb;
+  --secondary-foreground: #263247;
+  --muted: #667085;
+  --muted-foreground: #667085;
+  --accent: #eaf1ff;
+  --accent-foreground: #245bce;
+  --destructive: #c53845;
+  --destructive-foreground: #ffffff;
+  --border: #e4e7ec;
+  --input: #e4e7ec;
+  --ring: #3370eb;
+  --radius: 0.625rem;
+
+  /* shadcn 接入前页面继续使用的应用别名。 */
+  --surface: var(--background);
+  --surface-raised: var(--popover);
+  --surface-subtle: var(--secondary);
+  --surface-soft: var(--secondary);
+  --canvas: #f8fafc;
+  --ink: var(--foreground);
+  --text: var(--foreground);
+  --line: var(--border);
+  --primary-soft: var(--accent);
+  --control-selected: var(--primary);
+  --control-selected-text: var(--primary-foreground);
+  --control-hover: #edf3ff;
+  --success: #067647;
+  --warning: #9a6700;
+  --danger: var(--destructive);
+  /* 状态色不能散落在各页面。为表格徽标、提示条和统计卡提供同一组浅色基底。 */
+  --success-background: #ecfdf3;
+  --success-border: #a6f4c5;
+  --warning-background: #fffaeb;
+  --warning-border: #fedf89;
+  --danger-background: #fef3f2;
+  --danger-border: #fecdca;
+  --info-background: #eff8ff;
+  --info-border: #b2ddff;
+
+  /* shadcn-vue 生成的 Tailwind 令牌会读取该前景色变量。 */
+  --ui-primary-foreground: var(--primary-foreground);
+  --ui-destructive: var(--destructive);
+  --ui-radius: var(--radius);
+  --sidebar-background: #f6f7f9;
+  --sidebar-foreground: #344054;
+  --sidebar-accent: #eaf1ff;
+  --sidebar-accent-foreground: #245bce;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --scrollbar-track: var(--secondary);
+  --scrollbar-thumb: #b6c0d0;
+}
+
+:root[data-theme="dark"] {
+  /* 保持接近既有 TaskLoom 深色配色，避免已保存的皮肤偏好产生视觉断层。 */
+  --background: #182132;
+  --foreground: #e0e7f2;
+  --card: #182132;
+  --card-foreground: #e0e7f2;
+  --popover: #202b3e;
+  --popover-foreground: #e0e7f2;
+  --primary: #91b8ff;
+  --primary-foreground: #142138;
+  --secondary: #141d2c;
+  --secondary-foreground: #e0e7f2;
+  --muted: #a0aec3;
+  --muted-foreground: #a0aec3;
+  --accent: #253652;
+  --accent-foreground: #b4ceff;
+  --destructive: #ff9da8;
+  --destructive-foreground: #32151b;
+  --border: #334057;
+  --input: #41506a;
+  --ring: #91b8ff;
+
+  --surface: var(--background);
+  --surface-raised: var(--popover);
+  --surface-subtle: var(--secondary);
+  --surface-soft: var(--secondary);
+  --canvas: #101827;
+  --ink: var(--foreground);
+  --text: var(--foreground);
+  --line: var(--border);
+  --primary-soft: var(--accent);
+  --control-selected: #356cd0;
+  --control-selected-text: #ffffff;
+  --control-hover: #202e43;
+  --success: #83d8b3;
+  --warning: #f4cc83;
+  --danger: var(--destructive);
+  /* 深色皮肤下仍保持足够对比度，避免浅色告警底色刺眼或文字失焦。 */
+  --success-background: #123a31;
+  --success-border: #2f8068;
+  --warning-background: #403215;
+  --warning-border: #806622;
+  --danger-background: #421f29;
+  --danger-border: #8f4655;
+  --info-background: #1f3654;
+  --info-border: #416995;
+
+  --ui-primary-foreground: var(--primary-foreground);
+  --ui-destructive: var(--destructive);
+  --sidebar-background: #131c2b;
+  --sidebar-foreground: #b9c6d9;
+  --sidebar-accent: #263c60;
+  --sidebar-accent-foreground: #b4ceff;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --scrollbar-track: #141d2c;
+  --scrollbar-thumb: #5b6b86;
+}
+
+/* 让共用旧按钮与 shadcn Button 在视觉上兼容，不改变显示方式、点击处理、禁用
+   语义或业务变体。 */
+.btn,
+.app-shell .btn {
+  border-radius: calc(var(--radius) - 2px);
+  font-weight: 500;
+  line-height: 1.25;
+  transition: background-color 150ms ease, border-color 150ms ease,
+    box-shadow 150ms ease, color 150ms ease;
+}
+
+.btn:not(:disabled):not(.primary):not(.danger):not(.danger-outline):not(.danger-category):not(.ghost):hover {
+  background: var(--secondary);
+  border-color: color-mix(in srgb, var(--foreground) 22%, var(--border));
+}
+
+.btn:disabled,
+[data-slot="button"]:disabled {
+  cursor: not-allowed;
+}
+
+/* 新 shadcn-vue 原语使用 data-slot。既有组件仍保留本地布局 CSS；这里只统一
+   它们使用的表面和圆角变量。 */
+[data-slot="popover-content"] {
+  border-color: var(--border);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border-radius: var(--radius);
+}
+
+[data-slot="scroll-area-thumb"] {
+  background: var(--scrollbar-thumb);
+}
+
+/* 明确的键盘焦点环仅限定在应用表面，而非破坏性地重置整个文档；鼠标操作不会
+   获得该轮廓。 */
+:where(.app-shell, .auth-loading, .join-page, .initial-password-page)
+  :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* 基线字段样式让新控件与 shadcn 组件一致。页面内更高优先级的局部样式仍然生效，
+   从而保护富文本、日历字段、自定义颜色输入和刻意紧凑的控件。 */
+:where(.app-shell, .auth-loading, .join-page, .initial-password-page)
+  :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea) {
+  border-color: var(--input);
+  background-color: var(--background);
+  color: var(--foreground);
+  border-radius: calc(var(--radius) - 2px);
+}
+
+:where(.app-shell, .auth-loading, .join-page, .initial-password-page)
+  :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea):focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent);
+}
+
+:root[data-theme="dark"] :is(input, select, textarea) {
+  color-scheme: dark;
+}
+
+/* 浏览器与重要的内部滚动面统一使用低干扰的 shadcn 风格滚动条。本处不修改
+   pointer-event 或 overflow 行为，因此抽屉和富文本编辑器仍保留自己的交互机制。 */
+html {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+:where(.workspace, .rail, .table-wrap, .drawer, .detail-main, .detail-props,
+  .settings-table-wrap, .settings-modal, .draft-dialog, .draft-dialog-body,
+  .draft-dialog-body > aside, .draft-dialog-body > main, .split-main,
+  .split-aside, .scroll-area-viewport) {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+:where(.workspace, .rail, .table-wrap, .drawer, .detail-main, .detail-props,
+  .settings-table-wrap, .settings-modal, .draft-dialog, .draft-dialog-body,
+  .draft-dialog-body > aside, .draft-dialog-body > main, .split-main,
+  .split-aside, .scroll-area-viewport)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:where(.workspace, .rail, .table-wrap, .drawer, .detail-main, .detail-props,
+  .settings-table-wrap, .settings-modal, .draft-dialog, .draft-dialog-body,
+  .draft-dialog-body > aside, .draft-dialog-body > main, .split-main,
+  .split-aside, .scroll-area-viewport)::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+:where(.workspace, .rail, .table-wrap, .drawer, .detail-main, .detail-props,
+  .settings-table-wrap, .settings-modal, .draft-dialog, .draft-dialog-body,
+  .draft-dialog-body > aside, .draft-dialog-body > main, .split-main,
+  .split-aside, .scroll-area-viewport)::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 2px solid var(--scrollbar-track);
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+:where(.workspace, .rail, .table-wrap, .drawer, .detail-main, .detail-props,
+  .settings-table-wrap, .settings-modal, .draft-dialog, .draft-dialog-body,
+  .draft-dialog-body > aside, .draft-dialog-body > main, .split-main,
+  .split-aside, .scroll-area-viewport)::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--scrollbar-thumb) 72%, var(--foreground));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+}

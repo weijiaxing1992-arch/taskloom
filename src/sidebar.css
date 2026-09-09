@@ -1,0 +1,573 @@
+/*
+ * 应用外壳视觉层。
+ *
+ * 这里仅处理工作台的一级导航、项目顶部栏和它们的响应式状态。业务页面仍各自
+ * 维护布局，避免一次视觉更新影响表格、抽屉和编辑器的交互尺寸。
+ */
+.app-shell {
+  --shell-rail-width: 238px;
+  --shell-topbar-height: 62px;
+  --shell-project-nav-height: 50px;
+  background: var(--canvas);
+}
+
+/* 左侧导航：用低对比表面承载结构，用清晰但克制的选中态标明当前位置。 */
+.app-shell .rail {
+  width: var(--shell-rail-width);
+  min-width: var(--shell-rail-width);
+  padding: 16px 12px 12px;
+  color: var(--sidebar-foreground, var(--nav-text));
+  background: var(--sidebar-background, var(--nav-surface));
+  border-right-color: var(--sidebar-border, var(--line));
+  box-shadow: 1px 0 0 color-mix(in srgb, var(--border) 70%, transparent);
+  scrollbar-gutter: stable;
+  transition: width 180ms ease, min-width 180ms ease, padding 180ms ease;
+}
+
+.app-shell .brand {
+  min-height: 56px;
+  padding: 4px 10px 20px;
+}
+
+.app-shell .brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: calc(var(--radius) + 2px);
+  background: linear-gradient(145deg, #2d6bda, #4f89ef);
+  box-shadow: 0 7px 16px color-mix(in srgb, #2762c5 24%, transparent);
+}
+
+.app-shell .brand strong {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.app-shell .brand small {
+  margin-top: 3px;
+  letter-spacing: 0.01em;
+}
+
+.app-shell .tenant {
+  gap: 11px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border-color: color-mix(in srgb, var(--border) 92%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.app-shell .tenant b {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.app-shell .tenant .avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: calc(var(--radius) - 1px);
+  font-size: 12px;
+}
+
+.app-shell .sidebar-collapse-toggle {
+  display: none;
+}
+
+.app-shell .global-nav {
+  gap: 2px;
+}
+
+.app-shell .nav-section-label {
+  padding: 5px 11px 7px;
+  color: var(--muted);
+  font-size: calc(10px * var(--devflow-font-scale, 1));
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.app-shell .nav-section-spaced {
+  margin-top: 17px;
+}
+
+.app-shell .rail :is(.global-nav a, .rail-bottom > a) {
+  position: relative;
+  min-height: 38px;
+  padding: 9px 11px;
+  color: var(--sidebar-foreground, var(--nav-text));
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 13px;
+  font-weight: 520;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.app-shell .rail :is(.global-nav a, .rail-bottom > a):hover {
+  background: color-mix(in srgb, var(--sidebar-accent, var(--nav-hover)) 74%, transparent);
+  color: var(--ink);
+}
+
+.app-shell .rail :is(.global-nav a, .rail-bottom > a).router-link-active {
+  color: var(--sidebar-accent-foreground, var(--nav-selected-text));
+  background: var(--sidebar-accent, var(--nav-selected));
+  box-shadow: inset 3px 0 0 var(--primary);
+  font-weight: 650;
+}
+
+/* 侧栏是高频键盘导航入口，局部焦点环确保新壳层不依赖浏览器默认样式。 */
+.app-shell .rail :is(.global-nav a, .rail-bottom > a, .sidebar-collapse-toggle):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.app-shell .global-nav .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.app-shell .global-nav kbd {
+  min-width: 28px;
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--background) 84%, transparent);
+  color: var(--muted);
+  text-align: center;
+}
+
+.app-shell .global-nav em {
+  min-width: 19px;
+  height: 19px;
+  border: 2px solid var(--sidebar-background, var(--nav-surface));
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  font-weight: 650;
+}
+
+.app-shell .rail-bottom {
+  display: grid;
+  gap: 2px;
+  padding-top: 18px;
+}
+
+.app-shell .brand-slogan {
+  margin: 0 8px 14px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-left: 2px solid var(--primary);
+  border-radius: 0 calc(var(--radius) - 2px) calc(var(--radius) - 2px) 0;
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+  color: var(--muted);
+  font-size: calc(10px * var(--devflow-font-scale, 1));
+  line-height: 1.7;
+}
+
+.app-shell .rail-bottom > .current-user {
+  gap: 9px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--background) 76%, transparent);
+}
+
+.app-shell .current-user:hover,
+.app-shell .current-user.router-link-active {
+  background: var(--sidebar-accent, var(--nav-selected));
+}
+
+.app-shell .current-user b {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.app-shell .profile-chevron {
+  color: var(--muted);
+}
+
+.app-shell .rail-logout {
+  min-height: 36px;
+  margin-top: 2px;
+  padding-inline: 11px;
+  color: var(--muted);
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.app-shell .rail-logout:hover {
+  color: var(--ink);
+  background: var(--surface-subtle);
+}
+
+/* 顶部栏采用「左侧工作区 / 居中搜索 / 右侧账户动作」的稳定网格。 */
+.app-shell .workspace {
+  background: var(--canvas);
+}
+
+.app-shell .workspace > .topbar {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(220px, 360px) minmax(190px, 1fr);
+  align-items: center;
+  gap: 18px;
+  min-height: var(--shell-topbar-height);
+  height: var(--shell-topbar-height);
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  border-bottom-color: var(--border);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.app-shell .topbar-leading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.app-shell .project-switcher {
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 7px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.app-shell .project-switcher:hover,
+.app-shell .project-switcher:focus-within {
+  border-color: color-mix(in srgb, var(--border) 92%, transparent);
+  background: var(--surface-subtle);
+}
+
+.app-shell .project-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: calc(var(--radius) - 2px);
+  font-weight: 700;
+}
+
+.app-shell .project-switcher select {
+  max-width: min(290px, 28vw);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.app-shell .workspace > .topbar > .top-search-widget {
+  width: min(100%, 360px);
+  min-width: 0;
+  justify-self: center;
+}
+
+.app-shell .top-actions {
+  justify-self: end;
+  gap: 4px;
+  min-width: max-content;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+.app-shell .top-actions :is(.plain-icon, .icon-link) {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--muted);
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.app-shell .top-actions :is(.plain-icon, .icon-link):hover {
+  border-color: color-mix(in srgb, var(--border) 85%, transparent);
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
+
+.app-shell .top-actions .locale-switcher {
+  color: var(--muted);
+}
+
+.app-shell .top-actions .locale-switcher select {
+  color: var(--muted);
+}
+
+.app-shell .top-actions .avatar-link {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 4px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 86%, transparent);
+}
+
+.app-shell .top-actions .icon-link em {
+  /* 历史 v2 样式用 left/top 定位徽标，未读数会漂到顶部栏外。这里重置为
+     以 32px 图标按钮右上角为基准，99+ 仍可完整显示且不遮挡头像。 */
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  left: auto;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0 4px;
+  border: 2px solid var(--background);
+  border-radius: 999px;
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.app-shell .project-nav {
+  min-height: var(--shell-project-nav-height);
+  height: var(--shell-project-nav-height);
+  gap: 4px;
+  padding: 0 20px;
+  align-items: center;
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  border-bottom-color: var(--border);
+}
+
+.app-shell .project-nav-label {
+  padding: 0 13px 0 0;
+  color: var(--muted);
+  font-size: calc(11px * var(--devflow-font-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+.app-shell .project-nav a {
+  position: relative;
+  height: 34px;
+  padding: 0 12px;
+  color: var(--muted);
+  border-radius: calc(var(--radius) - 3px);
+  font-size: 13px;
+  font-weight: 540;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.app-shell .project-nav a:hover {
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
+
+.app-shell .project-nav a.router-link-active {
+  border-bottom: 0;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.app-shell .workspace > main {
+  background: var(--canvas);
+}
+
+/* 收起时保留图标节奏和状态提示；文案仍由 title / aria-label 提供。 */
+@media (min-width: 1025px) {
+  .app-shell .sidebar-collapse-toggle {
+    display: flex;
+    position: sticky;
+    top: 8px;
+    z-index: 4;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 34px;
+    margin: 0 0 12px;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: calc(var(--radius) - 2px);
+    background: var(--sidebar-background, var(--nav-surface));
+    color: var(--muted);
+    font-size: 11px;
+    text-align: left;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+
+  .app-shell .sidebar-collapse-toggle:hover {
+    border-color: color-mix(in srgb, var(--border) 88%, transparent);
+    background: var(--background);
+    color: var(--ink);
+  }
+
+  .app-shell .rail.rail-collapsed {
+    width: 72px;
+    min-width: 72px;
+    padding: 16px 10px 12px;
+    overflow-x: hidden;
+  }
+
+  .app-shell .rail.rail-collapsed .brand {
+    min-height: 58px;
+    padding: 4px 0 18px;
+  }
+
+  .app-shell .rail.rail-collapsed :is(.brand > div, .tenant, .nav-section-label, .brand-slogan, .rail-link-label, .sidebar-toggle-label, .global-nav kbd, .current-user > div, .profile-chevron) {
+    display: none;
+  }
+
+  .app-shell .rail.rail-collapsed .sidebar-collapse-toggle {
+    justify-content: center;
+    min-height: 38px;
+    padding: 7px;
+  }
+
+  .app-shell .rail.rail-collapsed .global-nav {
+    gap: 5px;
+  }
+
+  .app-shell .rail.rail-collapsed :is(.global-nav a, .rail-bottom > a) {
+    justify-content: center;
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 8px;
+  }
+
+  .app-shell .rail.rail-collapsed .global-nav em {
+    position: absolute;
+    top: 0;
+    right: -1px;
+    min-width: 17px;
+    height: 17px;
+    margin: 0;
+    padding: 0 3px;
+    border-width: 1px;
+    border-radius: 9px;
+    font-size: 9px;
+    line-height: 15px;
+  }
+
+  .app-shell .rail.rail-collapsed .rail-bottom {
+    gap: 6px;
+    padding-top: 16px;
+  }
+
+  .app-shell .rail.rail-collapsed .rail-bottom > .current-user {
+    margin-top: 8px;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .app-shell .rail.rail-collapsed .rail-logout {
+    justify-content: center;
+    min-height: 40px;
+    padding: 8px;
+  }
+}
+
+@media (min-width: 1025px) and (max-width: 1300px) {
+  .app-shell .rail:not(.rail-collapsed) {
+    width: 214px;
+    min-width: 214px;
+  }
+
+  .app-shell .workspace > .topbar {
+    grid-template-columns: minmax(175px, 1fr) minmax(200px, 300px) minmax(160px, 1fr);
+    gap: 12px;
+    padding-inline: 16px;
+  }
+
+  .app-shell .project-switcher select {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .app-shell {
+    min-width: 0;
+  }
+
+  .app-shell .rail {
+    background: var(--sidebar-background, var(--nav-surface));
+    box-shadow: 14px 0 42px color-mix(in srgb, var(--foreground) 24%, transparent);
+  }
+
+  .app-shell .mobile-nav-close {
+    background: var(--surface-subtle);
+    color: var(--ink);
+  }
+
+  .app-shell .mobile-nav-backdrop {
+    background: color-mix(in srgb, #101828 58%, transparent);
+  }
+
+  .app-shell .workspace > .topbar {
+    display: flex;
+    min-height: 62px;
+    height: auto;
+    padding: 10px 14px;
+    gap: 10px;
+  }
+
+  .app-shell .topbar-leading {
+    flex: 1;
+  }
+
+  .app-shell .top-actions {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .app-shell .project-nav {
+    padding-inline: 14px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell .workspace > .topbar {
+    flex-wrap: wrap;
+    padding-inline: 12px;
+  }
+
+  .app-shell .topbar-leading {
+    min-width: 0;
+  }
+
+  .app-shell .project-switcher select {
+    max-width: calc(100vw - 188px);
+  }
+
+  .app-shell .workspace > .topbar > .top-search-widget {
+    order: 3;
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .app-shell .top-actions {
+    gap: 2px;
+  }
+
+  .app-shell .top-actions .locale-switcher select,
+  .app-shell .top-actions .plain-icon {
+    display: none;
+  }
+
+  .app-shell .project-nav {
+    min-height: 46px;
+    height: 46px;
+    padding-inline: 10px;
+  }
+
+  .app-shell .project-nav a {
+    height: 32px;
+    padding-inline: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell :is(.rail :is(.global-nav a, .rail-bottom > a), .project-nav a, .project-switcher, .top-actions :is(.plain-icon, .icon-link), .sidebar-collapse-toggle) {
+    transition-duration: 0ms;
+  }
+}
