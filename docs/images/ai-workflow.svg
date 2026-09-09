@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title desc">
+ <title id="title">TaskLoom AI 辅助与外部编程协作流程</title><desc id="desc">描述需求，AI生成建议，人工预览采纳，导出JSON或Markdown或者通过API交给外部AI工具。不会自动提交代码。</desc>
+ <defs><linearGradient id="ai" x2="1" y2="1"><stop stop-color="#eef2ff"/><stop offset="1" stop-color="#f5edff"/></linearGradient><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0L7 4L0 8" fill="none" stroke="#9aa9c2" stroke-width="1.5"/></marker></defs>
+ <rect width="1280" height="420" rx="24" fill="#f4f7fc"/>
+ <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC',sans-serif">
+ <text x="48" y="65" font-size="29" fill="#172744" font-weight="750">让 AI 参与协作，让人保留决定权</text>
+ <text x="48" y="99" font-size="16" fill="#61718b">工作流示意 / AI-ASSISTED, HUMAN-REVIEWED</text>
+ <g stroke="#dce4ef"><rect x="48" y="150" width="258" height="160" rx="16" fill="#fff"/><rect x="356" y="150" width="258" height="160" rx="16" fill="url(#ai)"/><rect x="664" y="150" width="258" height="160" rx="16" fill="#fff"/><rect x="972" y="150" width="260" height="160" rx="16" fill="#fff"/></g>
+ <g stroke="#9aa9c2" stroke-width="2" marker-end="url(#arrow)"><path d="M317 230H341"/><path d="M625 230H649"/><path d="M933 230H957"/></g>
+ <g fill="#6279c2" font-size="13" font-weight="700"><text x="72" y="182">01 / INPUT</text><text x="380" y="182">02 / ASSIST</text><text x="688" y="182">03 / REVIEW</text><text x="996" y="182">04 / CONNECT</text></g>
+ <g fill="#172744" font-size="23" font-weight="700"><text x="72" y="222">描述需求</text><text x="380" y="222">AI 生成建议</text><text x="688" y="222">人工确认采纳</text><text x="996" y="222">外部 AI 协作</text></g>
+ <g fill="#61718b" font-size="16"><text x="72" y="257">补充背景与目标</text><text x="72" y="284">关联资料与上下文</text><text x="380" y="257">标题 / 需求完善</text><text x="380" y="284">用例生成与审查</text><text x="688" y="257">预览并选择适用内容</text><text x="688" y="284">不静默覆盖原文</text><text x="996" y="257">JSON / Markdown 导出</text><text x="996" y="284">API 读写集成</text></g>
+ <text x="48" y="369" fill="#7b879c" font-size="14">能力边界：需自行配置模型服务；图中不代表自动编码、自动提交或自动上线。导出范围参见使用手册。</text>
+ </g>
+</svg>

@@ -1,3 +1,5 @@
+![TaskLoom: open-source, self-hosted R&D collaboration with human-reviewed AI assistance](docs/images/taskloom-banner.svg)
+
 # TaskLoom
 
 **An open-source, self-hosted R&D collaboration and project management tool for teams evaluating TAPD and Teambition alternatives.**
@@ -14,6 +16,14 @@ Connect requirements, agile iterations, bug tracking, test cases, discussions an
 - Markdown/code editing, categorized attachments, JSON/Markdown requirement exports and API integrations for AI coding workflows.
 - Personal work, search, notifications and optional external messaging services.
 - TAPD PDF import with mapping review; compatibility depends on the input document.
+
+## Product overview
+
+![Capabilities: requirements, iterations, quality, AI assistance, knowledge and collaboration (Chinese labels)](docs/images/product-overview.svg)
+
+![AI workflow: describe, generate suggestions, review, then export or integrate through APIs (Chinese labels)](docs/images/ai-workflow.svg)
+
+These are capability diagrams, not application screenshots. External AI and notification services require separate configuration. No automatic code commits or deployment are implied.
 
 ## Get started
 

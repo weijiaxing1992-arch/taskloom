@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" role="img" aria-labelledby="title desc">
+  <title id="title">TaskLoom 研织 — 让需求、团队与 AI 协作成网</title>
+  <desc id="desc">TaskLoom 开源研发协作工具品牌横幅，展示需求、迭代、缺陷、测试四项能力。</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0d1534"/><stop offset="1" stop-color="#232052"/></linearGradient>
+    <linearGradient id="accent" x2="1" y2="1"><stop stop-color="#68dbff"/><stop offset="1" stop-color="#ac8bff"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity=".035"/></pattern>
+  </defs>
+  <rect width="1280" height="480" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="480" rx="24" fill="url(#grid)"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC',sans-serif">
+    <rect x="64" y="56" width="56" height="56" rx="16" fill="url(#accent)"/>
+    <path d="M78 73H107M78 85H107M85 68V100M98 68V100" stroke="#142346" stroke-width="5" stroke-linecap="round"/>
+    <text x="136" y="94" fill="#f6f8ff" font-size="32" font-weight="750">TaskLoom <tspan fill="#a6b6de" font-size="23">· 研织</tspan></text>
+    <text x="64" y="202" fill="#ffffff" font-size="47" font-weight="750">让需求、团队与 AI</text>
+    <text x="64" y="266" fill="#a3bcff" font-size="47" font-weight="750">协作成网。</text>
+    <text x="66" y="313" fill="#bec9e5" font-size="20">开源研发协作 · 自主部署 · 人工确认 AI 建议</text>
+    <rect x="64" y="357" width="143" height="34" rx="17" fill="#ffffff" fill-opacity=".08"/>
+    <text x="135" y="380" text-anchor="middle" fill="#dbe5ff" font-size="14">APACHE 2.0</text>
+    <text x="230" y="380" fill="#95a8d2" font-size="15">Vue + Go + SQLite</text>
+    <g stroke="#778cf0" stroke-width="2" fill="none" opacity=".6"><path d="M890 160L1040 240L890 320L740 240Z"/><path d="M890 160V320M740 240H1040"/></g>
+    <g text-anchor="middle" font-size="18" font-weight="650">
+      <rect x="812" y="120" width="156" height="72" rx="16" fill="#263655" stroke="#4c7fa4"/>
+      <text x="890" y="164" fill="#96e4ff">需求</text>
+      <rect x="978" y="204" width="156" height="72" rx="16" fill="#2c2d60" stroke="#796ab6"/>
+      <text x="1056" y="248" fill="#c5b7ff">迭代</text>
+      <rect x="812" y="292" width="156" height="72" rx="16" fill="#263655" stroke="#4c7fa4"/>
+      <text x="890" y="336" fill="#96e4ff">测试</text>
+      <rect x="646" y="204" width="156" height="72" rx="16" fill="#2c2d60" stroke="#796ab6"/>
+      <text x="724" y="248" fill="#c5b7ff">缺陷</text>
+      <circle cx="890" cy="240" r="28" fill="url(#accent)"/><text x="890" y="247" fill="#142346">AI</text>
+    </g>
+    <text x="890" y="407" text-anchor="middle" fill="#91a2cb" font-size="14" letter-spacing="2">OPEN SOURCE · BUILT FOR COLLABORATION</text>
+  </g>
+</svg>

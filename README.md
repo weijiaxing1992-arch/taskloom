@@ -1,3 +1,5 @@
+![TaskLoom 研织：开源研发协作，自主部署，让需求、团队与 AI 协作成网](docs/images/taskloom-banner.svg)
+
 # TaskLoom · 研织
 
 **开源、可自部署的 AI 研发协作与项目管理工具，面向寻找 TAPD / Teambition 替代方案的团队。**
@@ -17,6 +19,14 @@
 - **个人工作与通知**：查看与自己相关的工作，按项目、人员或部门搜索；搜索命中文字黄色高亮。
 - **自部署与可控数据**：Vue 3 + TypeScript 前端、Go API、SQLite。AI 与外部通知服务由部署方自行配置，默认不调用付费模型。
 - **迁移起点**：支持 TAPD PDF 需求导入流程。导入前核对字段与人员匹配，不保证所有导出模板无损兼容。
+
+## 产品一览
+
+![TaskLoom 功能总览：需求、迭代、缺陷与测试、AI 辅助、研发资料和个人协作](docs/images/product-overview.svg)
+
+![AI 协作流程：描述需求、生成建议、人工确认、通过导出或 API 连接外部 AI 工具](docs/images/ai-workflow.svg)
+
+以上为功能与流程示意图，非实际界面截图。AI 与外部通知服务需独立配置；能力及限制以本文和使用手册为准。
 
 ## TAPD / Teambition 开源替代场景
 

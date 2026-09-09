@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="600" viewBox="0 0 1280 600" role="img" aria-labelledby="title desc">
+ <title id="title">TaskLoom 功能总览</title><desc id="desc">六项产品能力：需求管理、敏捷迭代、缺陷与测试、AI辅助、研发资料、个人协作。此图为功能说明而非产品截图。</desc>
+ <rect width="1280" height="600" rx="24" fill="#f4f7fc"/>
+ <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC',sans-serif">
+ <text x="48" y="65" font-size="29" fill="#172744" font-weight="750">一个工作空间，连接研发全过程</text>
+ <text x="48" y="99" font-size="16" fill="#61718b">功能总览 / CAPABILITIES · 示意图，非界面截图</text>
+ <g fill="#ffffff" stroke="#dce4ef"><rect x="48" y="132" width="380" height="188" rx="16"/><rect x="450" y="132" width="380" height="188" rx="16"/><rect x="852" y="132" width="380" height="188" rx="16"/><rect x="48" y="342" width="380" height="188" rx="16"/><rect x="450" y="342" width="380" height="188" rx="16"/><rect x="852" y="342" width="380" height="188" rx="16"/></g>
+ <g font-size="13" font-weight="750" fill="#496bd7"><text x="74" y="168">01 / REQUIREMENTS</text><text x="476" y="168">02 / ITERATIONS</text><text x="878" y="168">03 / QUALITY</text><text x="74" y="378">04 / AI ASSISTANCE</text><text x="476" y="378">05 / KNOWLEDGE</text><text x="878" y="378">06 / COLLABORATION</text></g>
+ <g font-size="23" font-weight="700" fill="#172744"><text x="74" y="209">需求清晰，拆分有序</text><text x="476" y="209">计划与工作项相连</text><text x="878" y="209">缺陷与测试可追溯</text><text x="74" y="419">AI 建议，人来决定</text><text x="476" y="419">研发资料不再散落</text><text x="878" y="419">找到与你相关的工作</text></g>
+ <g font-size="17" fill="#61718b"><text x="74" y="249">需求与子需求 · 个人模板</text><text x="74" y="280">工程师字段 · TAPD PDF 导入核对</text><text x="476" y="249">迭代计划 · 工作项管理</text><text x="476" y="280">自定义列表字段 · 与我相关筛选</text><text x="878" y="249">缺陷跟踪 · 关联测试用例</text><text x="878" y="280">测试执行记录 · AI 用例审查</text><text x="74" y="459">标题生成 · 需求完善 · 用例生成</text><text x="74" y="490">先预览后确认 · 选择性采纳</text><text x="476" y="459">Markdown · 代码片段 · 分类附件</text><text x="476" y="490">JSON / Markdown 导出 · API 集成</text><text x="878" y="459">我的工作 · 人员与部门搜索</text><text x="878" y="490">通知中心 · 可选外部消息服务</text></g>
+ <text x="48" y="566" font-size="14" fill="#7b879c">TaskLoom · 社区预览版；外部 AI 与通知服务需独立配置，导入兼容性需核对。</text>
+ </g>
+</svg>
