@@ -563,12 +563,17 @@ func (a *App) fieldDefinitions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		d.MemberRoles = fieldMemberRoles(d)
-		tx, err := a.db.BeginTx(r.Context(), nil)
+		tx, err := a.beginFieldConfigurationWrite(r)
 		if err != nil {
-			fail(w, 503, "database_unavailable", "字段配置暂时无法读取，请稍后重试")
+			failFieldMutation(w, err)
 			return
 		}
 		defer tx.Rollback()
+		// 历史排序保留用于展示，新字段由服务端接到末尾；不再接受表单排序参数。
+		if err := tx.QueryRowContext(r.Context(), `SELECT COALESCE(MAX(sort_order),0)+10 FROM field_definitions WHERE tenant_id=? AND project_id=? AND object_type=? AND deleted_at=''`, tenantID, a.pid(), d.ObjectType).Scan(&d.SortOrder); err != nil {
+			fail(w, 503, "database_unavailable", "字段配置暂时无法读取，请稍后重试")
+			return
+		}
 		if err := a.validateFieldDepartment(tx, d, nil); err != nil {
 			fail(w, 422, "validation_error", err.Error())
 			return
@@ -668,7 +673,7 @@ func (a *App) fieldDefinition(w http.ResponseWriter, r *http.Request) {
 	parseJSON(def, &current.DefaultValue)
 	parseJSON(opts, &current.Options)
 	previous := current
-	for key, target := range map[string]any{"name": &current.Name, "description": &current.Description, "options": &current.Options, "defaultValue": &current.DefaultValue, "required": &current.Required, "searchable": &current.Searchable, "filterable": &current.Filterable, "listVisible": &current.ListVisible, "enabled": &current.Enabled, "sortOrder": &current.SortOrder, "departmentId": &current.DepartmentID} {
+	for key, target := range map[string]any{"name": &current.Name, "description": &current.Description, "options": &current.Options, "defaultValue": &current.DefaultValue, "required": &current.Required, "searchable": &current.Searchable, "filterable": &current.Filterable, "listVisible": &current.ListVisible, "enabled": &current.Enabled, "departmentId": &current.DepartmentID} {
 		if raw, ok := patch[key]; ok {
 			if string(raw) == "null" && key != "defaultValue" {
 				fail(w, 422, "validation_error", "字段值类型不正确")
@@ -902,8 +907,10 @@ func (a *App) sprints(w http.ResponseWriter, r *http.Request) {
 		if s.Status == "" {
 			s.Status = "规划中"
 		}
-		if !validChoice(s.Status, []string{"规划中", "进行中", "已完成", "已取消"}) {
-			fail(w, 422, "validation_error", "迭代状态无效")
+		// 已完成必须经过 /complete 的原子迁移、通知和升级日志任务；
+		// 已取消同样不能伪造成一个从未存在过的历史迭代。
+		if !validChoice(s.Status, []string{"规划中", "进行中"}) {
+			fail(w, 422, "validation_error", "新建迭代只能选择规划中或进行中状态")
 			return
 		}
 		if err := a.validateSprintName(s.Name, 0); err != nil {
@@ -998,6 +1005,13 @@ func (a *App) sprint(w http.ResponseWriter, r *http.Request) {
 			return
 		case "complete":
 			a.completeSprint(w, r, id)
+			return
+		case "release-notes":
+			if len(parts) > 3 || len(parts) == 3 && parts[2] != "bundle" {
+				fail(w, 404, "not_found", "资源不存在")
+				return
+			}
+			a.sprintReleaseNotes(w, r, id, parts[2:])
 			return
 		}
 	}
@@ -1205,6 +1219,12 @@ func (a *App) completeSprint(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	actor := a.uid()
+	_ = tx.QueryRowContext(r.Context(), `SELECT name FROM users WHERE tenant_id=? AND id=?`, tenantID, a.uid()).Scan(&actor)
+	if err = a.recordSprintRequirementHistory(r.Context(), tx, a1, a2, b.TargetSprint, actor, now, true); err != nil {
+		fail(w, 500, "db_error", err.Error())
+		return
+	}
 	reqRes, err := tx.ExecContext(r.Context(), `UPDATE requirements SET sprint=?,updated_at=? WHERE tenant_id=? AND project_id=? AND sprint IN (?,?) AND NOT EXISTS(SELECT 1 FROM requirement_statuses rs WHERE rs.tenant_id=requirements.tenant_id AND rs.project_id=requirements.project_id AND rs.key=requirements.status AND rs.category IN ('done','cancelled'))`, b.TargetSprint, now, tenantID, a.pid(), a1, a2)
 	if err != nil {
 		fail(w, 500, "db_error", err.Error())
@@ -1234,8 +1254,6 @@ func (a *App) completeSprint(w http.ResponseWriter, r *http.Request, id int64) {
 	reqN, _ := reqRes.RowsAffected()
 	bugN, _ := bugRes.RowsAffected()
 	detail := fmt.Sprintf("完成迭代，将 %d 个需求、%d 个缺陷迁移到 %s", reqN, bugN, b.TargetSprint)
-	actor := a.uid()
-	_ = tx.QueryRowContext(r.Context(), `SELECT name FROM users WHERE tenant_id=? AND id=?`, tenantID, a.uid()).Scan(&actor)
 	if _, err = tx.ExecContext(r.Context(), `INSERT INTO entity_activities(tenant_id,project_id,object_type,object_id,actor,event,detail,created_at)VALUES(?,?,?,?,?,?,?,?)`, tenantID, a.pid(), "sprint", id, actor, "completed", detail, now); err != nil {
 		fail(w, 500, "db_error", err.Error())
 		return
@@ -1249,6 +1267,10 @@ func (a *App) completeSprint(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	} else if err = a.writeAssignmentNotices(r.Context(), tx, notices, now); err != nil {
 		fail(w, 500, "db_error", err.Error())
+		return
+	}
+	if err = a.enqueueAutomaticReleaseNotes(r.Context(), tx, id); err != nil {
+		fail(w, 503, "release_notes_unavailable", "升级日志任务暂时无法保存，请稍后重试")
 		return
 	}
 	if err = tx.Commit(); err != nil {

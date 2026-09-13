@@ -12,6 +12,7 @@ const core: WorkField[] = [
   { key:'type',label:'需求类型',kind:'text' }, { key:'category',label:'分类',kind:'text' },
   { key:'status',label:'状态',kind:'text',default:true }, { key:'priority',label:'优先级',kind:'text',default:true,options:['P0','P1','P2','P3'].map(value=>({value,label:value})) },
   { key:'sprint',label:'迭代',kind:'text' }, { key:'owner',label:'产品负责人',kind:'person' }, { key:'assignee',label:'处理人',kind:'person',default:true,width:190 },
+  { key:'iterationDelayCount',label:'迭代延误次数',kind:'number',width:145 },
   { key:'discipline',label:'职能',kind:'text',options:Object.entries({product:'产品',frontend:'前端',backend:'后端',algorithm:'算法',ui:'UI',qa:'测试'}).map(([value,label])=>({value,label})),systemOptions:true },
   ...workRoleFields.flatMap(([key,label,person]):WorkField[]=>[{key:`role.${key}.userId`,label:person,kind:'person',group:'角色权重',width:170},{key:`role.${key}.value`,label,kind:'number',group:'角色权重',default:true,width:130}]),
   { key:'weightTotal',label:'总权重',kind:'number',default:true,group:'角色权重' },
@@ -28,6 +29,14 @@ const defectFields: WorkField[] = [
   {key:'steps',label:'复现步骤',kind:'text'}, {key:'actual',label:'实际结果',kind:'text'}, {key:'expected',label:'预期结果',kind:'text'},
   {key:'environment',label:'环境',kind:'text'}, {key:'foundVersion',label:'发现版本',kind:'text'}, {key:'fixVersion',label:'修复版本',kind:'text'},
 ]
+// 依赖状态只属于需求：缺陷不复用需求依赖表，混合迭代列表也不展示该筛选，
+// 避免把“被阻塞”误解释成缺陷状态。
+const requirementDependencyFields: WorkField[] = [
+  {key:'dependencyState',label:'依赖状态',kind:'text',group:'协作',options:[
+    {value:'blocked',label:'被阻塞'}, {value:'blocking',label:'阻塞其他需求'},
+    {value:'related',label:'有关联'}, {value:'clear',label:'无依赖'},
+  ],systemOptions:true},
+]
 export function workItemFields(definitions:any[]=[], members:any[]=[], mixed=false):WorkField[] {
   // 人员候选以稳定用户 ID 为值，部门约束来自真实 departmentIds；姓名只显示。
   // 可选候选不等于授权：保存时服务端仍应校验活动成员、项目和字段部门约束。
@@ -35,7 +44,7 @@ export function workItemFields(definitions:any[]=[], members:any[]=[], mixed=fal
   // 迭代默认顺序：编号、标题、创建时间；不覆盖用户已经保存的列顺序。
   // 恢复默认与首次加载共用此字段表，创建时间仍可隐藏、移动。
   const base=mixed?[...core.slice(0,2),{...core.find(field=>field.key==='createdAt')!,default:true},...core.slice(2).filter(field=>field.key!=='createdAt')]:core.filter(field=>field.key!=='objectType')
-  return [...base.map(field=>({...field,group:field.group||'基础信息',options:field.kind==='person'?people:field.options})),...(mixed?defectFields.map(field=>({...field,group:'缺陷字段'})):[]),
+  return [...base.map(field=>({...field,group:field.group||'基础信息',options:field.kind==='person'?people:field.options})),...(mixed?defectFields.map(field=>({...field,group:'缺陷字段'})):requirementDependencyFields),
     ...definitions.filter(definition=>definition.enabled!==false).map(definition=>({
       key:'cf.'+(mixed?definition.objectType+'.':'')+definition.key,label:definition.name,kind:({number:'number',date:'date',boolean:'boolean',multi_select:'multi',users:'multi'} as Record<string,WorkFieldKind>)[definition.type]||'text',
       options:['user','users'].includes(definition.type)?members.filter(member=>member.active!==false&&(!definition.departmentId||member.departmentIds?.includes(definition.departmentId))).map(member=>({value:member.id,label:member.name+' · '+(member.departmentNames?.join('、')||member.email||member.id)})):(definition.options||[]).map((value:string)=>({value,label:value})),
@@ -90,6 +99,13 @@ export function queryWorkItems(items:any[],fields:WorkField[],rules:WorkFilter[]
   const registry=new Map(fields.map(field=>[field.key,field])),sortField=registry.get(sortKey)
   const result=items.filter(item=>rules.every(rule=>{const field=registry.get(rule.field);return !!field&&matchesWorkFilter(item,rule,field,timezone)}))
   return result.sort((left,right)=>{
+    // 迭代工作项按业务顺序而非内部类型键的字母序排列：需求在前、缺陷在后；
+    // 用户仍可在类型列主动切换为反向排序。
+    if(sortKey==='objectType'){
+      const rank=(item:any)=>item.objectType==='requirement'?0:item.objectType==='defect'?1:2
+      const compared=rank(left)-rank(right)
+      return compared*(order==='asc'?1:-1)||left.id-right.id
+    }
     const a=sortKey==='code'?left.id:sortField?.kind==='person'?workItemPersonNames(left,sortKey,members):workItemValue(left,sortKey),b=sortKey==='code'?right.id:sortField?.kind==='person'?workItemPersonNames(right,sortKey,members):workItemValue(right,sortKey)
     if(emptyWorkValue(a)!==emptyWorkValue(b))return emptyWorkValue(a)?1:-1
     let compared=0

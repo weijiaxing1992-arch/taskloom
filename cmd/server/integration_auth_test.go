@@ -93,7 +93,7 @@ func TestIntegrationAuthenticationRequiresBearerAndCurrentCredentials(t *testing
 		nil,
 		{"Authorization": "Bearer invalid"},
 		{"Authorization": "Basic " + token},
-		{"X-DevFlow-Expected-User": "u_admin", "X-User-ID": "u_admin"},
+		{"X-TaskLoom-Expected-User": "u_admin", "X-User-ID": "u_admin"},
 	} {
 		w := securityIntegrationRequest(t, a, "", "GET", "/api/open/v1/me?access_token="+token, "", headers)
 		if w.Code != http.StatusUnauthorized {
@@ -130,7 +130,7 @@ func TestIntegrationProjectBindingAndScopeCannotBeOverridden(t *testing.T) {
 		headers            map[string]string
 		status             int
 	}{
-		{"GET", "/api/open/v1/requirements", "", map[string]string{"X-DevFlow-Project": insightProjectID}, 403},
+		{"GET", "/api/open/v1/requirements", "", map[string]string{"X-TaskLoom-Project": insightProjectID}, 403},
 		{"GET", fmt.Sprintf("/api/open/v1/requirements/%d", foreignID), "", nil, 404},
 		{"GET", "/api/open/v1/requirements?projectId=" + insightProjectID, "", nil, 400},
 		{"POST", "/api/open/v1/requirements", `{"title":"Denied write"}`, nil, 403},

@@ -6,9 +6,9 @@ export interface OrganizationContext {
   roles:OrganizationRole[]; projects:OrganizationProject[]
 }
 export interface Department { id:string; name:string; code:string; parentId:string|null; status:string; sortOrder:number; memberCount:number }
-export interface ProjectMembership { projectId:string; role:string }
+export interface ProjectMembership { projectId:string; role:string; roles?:string[] }
 export interface OrganizationMember {
-  id:string; name:string; email:string; employeeNo:string; active:boolean; tenantRole:string; operationDisabled?:boolean
+  id:string; name:string; email:string; employeeNo:string; active:boolean; tenantRole:string; operationDisabled?:boolean; mustChangePassword?:boolean
   departmentIds:string[]; primaryDepartmentId:string; projectMemberships:ProjectMembership[]; groupIds:string[]
 }
 export function permits(context:OrganizationContext|undefined|null, permission:string) {
@@ -52,4 +52,5 @@ export const organizationSections=[
   {key:'server-monitor',name:'服务器监控',icon:'◌'},
   {key:'delivery',name:'交付与验收',icon:'▤'},
   {key:'wechat-login',name:'微信登录配置',icon:'◉'},
+  {key:'wecom-app',name:'企业微信自建应用',icon:'◉'},
 ] as const

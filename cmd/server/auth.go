@@ -99,6 +99,9 @@ CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at,
 	if _, err := a.db.Exec(schema); err != nil {
 		return err
 	}
+	if err := a.migrateLoginProtection(); err != nil {
+		return err
+	}
 	if err := a.migrateImpersonation(); err != nil {
 		return err
 	}
@@ -339,16 +342,34 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ChallengeID      string `json:"challengeId"`
+		ChallengeAnswer  string `json:"challengeAnswer"`
+		RefreshChallenge bool   `json:"refreshChallenge"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if decodeJSON(r, &body) != nil {
 		fail(w, http.StatusBadRequest, "invalid_json", "请求格式不正确")
 		return
 	}
 	identifier := strings.ToLower(strings.TrimSpace(body.Email))
+	// Resolve the community alias before computing the limiter scope, so the
+	// account name and email share both password checks and challenge limits.
 	if identifier == "admin" {
 		identifier = "admin@example.com"
+	}
+	if len(identifier) > 254 {
+		identifier = ""
+	}
+	guardScope := a.loginScope(r, identifier)
+	guard, guardErr := a.beginPasswordLogin(r, guardScope, body.ChallengeID, body.ChallengeAnswer, body.RefreshChallenge)
+	if guardErr != nil {
+		fail(w, 503, "database_unavailable", "登录服务暂时繁忙，请稍后重试")
+		return
+	}
+	if writeLoginGuard(w, guard) {
+		return
 	}
 	var id, name, hash, locale, timezone string
 	var active, disabled, mustChange bool
@@ -357,7 +378,27 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "登录服务暂时繁忙，请稍后重试")
 		return
 	}
-	if err != nil || !active || hash == "" || !verifyPassword(body.Password, hash) {
+	// Unknown/inactive/legacy identities still perform bcrypt work, preventing
+	// an immediate missing-user branch from becoming an account timing oracle.
+	eligible := err == nil && active && hash != "" && identifier != "" && len(body.Password) <= 72
+	verified := false
+	if eligible && strings.HasPrefix(hash, "$2") {
+		verified = verifyPassword(body.Password, hash)
+	} else {
+		_ = verifyPassword("dummy-login-attempt", a.dummyLoginHash())
+		if eligible {
+			verified = verifyPassword(body.Password, hash)
+		}
+	}
+	if !verified {
+		guard, guardErr = a.finishPasswordLogin(r, guardScope, false)
+		if guardErr != nil {
+			fail(w, 503, "database_unavailable", "登录服务暂时繁忙，请稍后重试")
+			return
+		}
+		if writeLoginGuard(w, guard) {
+			return
+		}
 		fail(w, http.StatusUnauthorized, "invalid_credentials", "邮箱或密码不正确")
 		return
 	}
@@ -374,6 +415,9 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusServiceUnavailable, "session_error", "登录会话创建失败")
 		return
 	}
+	// A cleanup failure must not report an already issued session as a failed
+	// login; only counters are reset, never other sessions or account state.
+	_, _ = a.finishPasswordLogin(r, guardScope, true)
 	_, _ = a.db.Exec(`UPDATE users SET last_active=? WHERE tenant_id=? AND id=?`, time.Now().UTC().Format(time.RFC3339), tenantID, id)
 	write(w, http.StatusOK, map[string]any{"authenticated": true, "user": map[string]any{"id": id, "name": name, "locale": storedLocale(locale), "timezone": timezone, "operationDisabled": disabled, "mustChangePassword": mustChange}, "supportedLocales": supportedLocales})
 }

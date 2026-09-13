@@ -15,7 +15,8 @@ const page={width:595,height:842,items:[
 const parsed=parseTapdPages([page,{width:595,height:842,items:[item('第二页正文',36,780)]}])
 assert.equal(parsed.fields.length,6);assert.equal(parsed.title,'大模型需求');assert.equal(parsed.workspaceId,'321');assert.equal(parsed.sourceId,'11321123')
 assert.equal(parsed.fields.find(x=>x.label==='备注').value,'feature/branch-\ncontinued')
-assert.equal(parsed.fields.find(x=>x.label==='未知字段').value,'不能丢失');assert.equal(parsed.description,'正文必须完整\n第二页正文')
+assert.equal(parsed.fields.find(x=>x.label==='未知字段').value,'不能丢失');assert.equal(parsed.description,'正文必须完整\n\n第二页正文')
+assert.deepEqual(parsed.descriptionDoc.content.map(x=>x.type),['paragraph','paragraph'])
 assert.equal(normalizeTapdText('⻓⼯程师王欣⾬'),'长工程师王欣雨')
 assert.throws(()=>parseTapdPages([{width:595,height:842,items:[]}]),/未识别/)
 assert.throws(()=>parseTapdPages([page,{width:595,height:842,items:[item('STORY 【ID456】 另一条需求',36,770)]}]),/多个需求/)
@@ -47,3 +48,15 @@ assert.match(suggestTapdMapping({label:'处理人',value:'张佳琪'},targets,[.
 assert.equal(tapdFileError([{name:'需求.PDF',size:10*1024*1024}]),'')
 for(const files of [[],[{name:'x.pdf',size:1},{name:'y.pdf',size:1}],[{name:'x.txt',size:1}],[{name:'x.pdf',size:0}],[{name:'x.pdf',size:10*1024*1024+1}]])assert(tapdFileError(files))
 console.log('Project-wide exact-name matching, PDF spacing, duplicates, inactive users and drop file validation passed.')
+
+const restricted=[{key:'cf.testers',label:'测试人员',kind:'members',memberIds:['b']}]
+const restrictedRow=suggestTapdMapping({label:'测试人员',value:'张佳琪;李锐鸿'},restricted,members)
+assert.deepEqual(restrictedRow.value,['b']);assert.match(restrictedRow.issue,/张佳琪.*角色或部门/)
+assert.throws(()=>buildTapdRequirement('x','',[{...restrictedRow,issue:'',value:['a']}],restricted),/角色、部门或项目/)
+// Never silently resolve an ambiguous name merely because only one of the names meets the field constraint.
+assert.match(suggestTapdMapping({label:'测试人员',value:'重复'},[{...restricted[0],memberIds:['c']}],members).issue,/同名/)
+const dates=[{key:'startDate',label:'开始时间',kind:'date'}]
+assert.equal(suggestTapdMapping({label:'开始时间',value:'2024-02-29'},dates,[]).value,'2024-02-29')
+assert.match(suggestTapdMapping({label:'开始时间',value:'2026-02-29'},dates,[]).issue,/日期/)
+assert.throws(()=>buildTapdRequirement('x','',[{field:{label:'开始时间',value:''},target:'startDate',value:'2026-04-31',issue:''}],dates),/有效的/)
+console.log('Role-constrained member matching, manual-selection revalidation, ambiguity and actual calendar dates passed.')

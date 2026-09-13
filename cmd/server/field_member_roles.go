@@ -44,11 +44,11 @@ func (a *App) validateFieldMemberRole(q fieldQueryer, d FieldDefinition, id stri
 	if len(roles) == 0 {
 		return nil
 	}
-	var role, tenantRole string
-	if err := q.QueryRow(`SELECT pm.role,tm.role FROM project_members pm JOIN tenant_memberships tm ON tm.tenant_id=pm.tenant_id AND tm.user_id=pm.user_id WHERE pm.tenant_id=? AND pm.project_id=? AND pm.user_id=?`, tenantID, a.pid(), id).Scan(&role, &tenantRole); err != nil {
+	var role, tenantRole, rawRoles string
+	if err := q.QueryRow(`SELECT pm.role,tm.role,`+projectRolesJSONSQL("pm")+` FROM project_members pm JOIN tenant_memberships tm ON tm.tenant_id=pm.tenant_id AND tm.user_id=pm.user_id WHERE pm.tenant_id=? AND pm.project_id=? AND pm.user_id=?`, tenantID, a.pid(), id).Scan(&role, &tenantRole, &rawRoles); err != nil {
 		return err
 	}
-	if validChoice(role, roles) || (tenantRole == "tenant_admin" && validChoice("tenant_admin", roles)) {
+	if rolesOverlap(decodedProjectRoles(rawRoles, role), roles) || (tenantRole == "tenant_admin" && validChoice("tenant_admin", roles)) {
 		return nil
 	}
 	return customFieldValidationError{fmt.Sprintf("%s 的新增成员必须符合字段限定角色", d.Name)}

@@ -7,6 +7,7 @@ for(const name of names){const source=await readFile(new URL('../src/views/'+nam
 // 测试工作台改为按页面拆分 SFC，共享响应式规则由入口显式导入的样式表提供。
 // 继续把它作为 Testing 页面的真实样式契约，避免“根组件无 style”掩盖移动端退化。
 const testingWorkspaceCSS=await readFile(new URL('../src/testing-workspace.css',import.meta.url),'utf8')
+const compactPageCSS=await readFile(new URL('../src/compact-page-layout.css',import.meta.url),'utf8')
 const testingWorkspaceStyle=compileStyle({source:testingWorkspaceCSS,filename:'testing-workspace.css',id:'testing-workspace',scoped:false})
 assert.deepEqual(testingWorkspaceStyle.errors,[])
 views.Testing.css=testingWorkspaceStyle.rawResult.root
@@ -23,6 +24,10 @@ await test('split test case editing keeps semantic step labels and a one-column 
 await test('organization styling targets real org-nav and organization-page classes and nested modals',()=>{assert.match(views.Organization.source,/class="organization-page"/);assert.match(views.Organization.source,/class="org-nav"/);for(const width of [375,390,768]){assert.equal(declaration('Organization',width,'.org-nav nav','overflow'),'auto');assert.equal(declaration('Organization',width,'.org-main :deep(.org-directory)','grid-template-columns'),'minmax(0,1fr)');assert.equal(declaration('Organization',width,'.org-main :deep(.org-modal>footer)','flex-wrap'),'wrap');assert.equal(declaration('Organization',width,'.org-main :deep(.org-modal)','max-height'),'calc(100dvh - 20px)')}})
 await test('profile navigation, passwords and saving actions remain available without horizontal overflow',()=>{for(const width of [375,390,768]){assert.equal(declaration('Profile',width,'.profile-sidebar','position'),'static');assert.equal(declaration('Profile',width,'.profile-sidebar nav','overflow'),'auto');assert.equal(declaration('Profile',width,'.profile-form>footer','flex-wrap'),'wrap');assert.equal(declaration('Profile',width,'.password-input input','min-width'),'0');assert.equal(declaration('Profile',width,'.password-input button','flex'),'none')}})
 await test('mobile additions do not activate the narrow layout on 1440 px desktop screens',()=>{for(const name of names)assert.equal(mobileRules(name,1440).length,0,name+' accidentally applies narrow layout to desktop')})
+await test('narrow page guidance stays anchored to its trigger instead of becoming an unpositioned fixed layer',()=>{
+  assert.doesNotMatch(compactPageCSS,/\.page-heading-note>p\s*\{[^}]*position:fixed/)
+  assert.match(compactPageCSS,/\.page-heading-note>p\s*\{[^}]*left:auto;\s*right:0[^}]*width:min\(320px,calc\(100vw - 32px\)\)/)
+})
 await test('personal work no longer keeps six fixed desktop columns on phones and tablets',()=>{for(const width of [375,390,768]){assert.equal(declaration('MyWork',width,'.work-list article','grid-template-columns'),'30px minmax(0,1fr) 22px');assert.equal(declaration('MyWork',width,'.work-list article>time','grid-column'),'2');assert.equal(declaration('MyWork',width,'.work-tabs','display'),'flex');assert.equal(declaration('MyWork',width,'.work-main>div','flex-wrap'),'wrap')}})
 await test('project cards, search summaries and notification actions fit the actual module classes',()=>{for(const width of [375,390,768]){assert.equal(declaration('Projects',width,'.project-card-grid','grid-template-columns'),'minmax(0,1fr)');assert.equal(declaration('Search',width,'.global-search-box input','min-width'),'0');assert.equal(declaration('Search',width,'.search-group article>div>div','flex-wrap'),'wrap');assert.equal(declaration('Notifications',width,'.notification-list article','grid-template-columns'),'6px 28px minmax(0,1fr)');assert.equal(declaration('Notifications',width,'.notification-list article>button','grid-column'),'3')}})
 await test('settings tabs and workload month controls wrap without hiding editable fields',()=>{for(const width of [375,390,768]){assert.equal(declaration('Fields',width,'.application-settings .settings-tabs','overflow'),'auto');assert.equal(declaration('Fields',width,'.application-settings .settings-object-tabs','overflow'),'auto');assert.equal(declaration('Fields',width,'.application-settings .settings-modal footer','flex-wrap'),'wrap');assert.equal(declaration('Workload',width,'.workload-month-controls','flex-wrap'),'wrap');assert.equal(declaration('Workload',width,'.workload-month-controls>input','min-width'),'130px')}})
@@ -30,7 +35,41 @@ await test('public join page and organization invitation links retain readable m
 await test('shared organization dialogs adapt outside organization routes as well as inside them',async()=>{const source=await readFile(new URL('../src/components/OrganizationModal.vue',import.meta.url),'utf8'),descriptor=parse(source).descriptor;assert.deepEqual(compileStyle({source:descriptor.styles.map(style=>style.content).join('\n'),filename:'OrganizationModal.vue',id:'org-dialog',scoped:true}).errors,[]);assert.match(source,/@media\(max-width:820px\)/);assert.match(source,/\.org-modal>footer\{[^}]*flex-wrap:wrap/);assert.match(source,/\.org-modal h2\{[^}]*overflow-wrap:anywhere/);assert.match(source,/\.org-modal-body\{[^}]*min-width:0/);assert.match(source,/safe-area-inset-bottom/);assert.match(source,/min-height:44px/)} )
 await test('image previews keep touch controls and safe-area spacing on phones',async()=>{const source=await readFile(new URL('../src/components/ImagePreview.vue',import.meta.url),'utf8'),descriptor=parse(source).descriptor;assert.deepEqual(compileStyle({source:descriptor.styles.map(style=>style.content).join('\n'),filename:'ImagePreview.vue',id:'preview',scoped:true}).errors,[]);assert.match(source,/\.image-preview \.preview-close\{width:44px;height:44px;flex:none\}/);assert.match(source,/\.preview-header>div:first-child>span\{flex:none\}/);assert.match(source,/padding-top:max\(12px,env\(safe-area-inset-top\)\)/);assert.match(source,/padding-bottom:max\(12px,env\(safe-area-inset-bottom\)\)/)} )
 await test('shared status filters and advanced rules cannot retain offscreen desktop positioning on phones',async()=>{const status=await readFile(new URL('../src/components/StatusMultiSelect.vue',import.meta.url),'utf8'),filters=await readFile(new URL('../src/components/WorkItemFilters.vue',import.meta.url),'utf8');assert.match(status,/\.status-filter\{flex-basis:100%;width:100%;min-width:0\}/);assert.match(status,/\.status-filter-menu\{width:100%;max-width:100%\}/);assert.match(filters,/\.work-filter-control \.work-filter-panel\{left:12px;right:12px;top:max\(12px,env\(safe-area-inset-top\)\);transform:none/);assert.match(filters,/grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\) 36px/);for(const source of [status,filters]){const descriptor=parse(source).descriptor;assert.deepEqual(compileStyle({source:descriptor.styles.map(style=>style.content).join('\n'),filename:'filter.vue',id:'filter',scoped:true}).errors,[])}})
-await test('member selection overrides desktop tiny inputs and supplies touch-sized shortcuts',async()=>{const source=await readFile(new URL('../src/components/MemberMultiSelect.vue',import.meta.url),'utf8');assert.match(source,/\.member-search input\{font-size:16px!important;min-height:44px\}/);assert.match(source,/\.member-shortcuts button,\.member-shortcuts select\{min-height:44px/);assert.match(source,/\.member-shortcuts select\{font-size:16px!important\}/)})
+await test('member selection overrides desktop tiny inputs and supplies touch-sized shortcuts',async()=>{
+ const source=await readFile(new URL('../src/components/MemberMultiSelect.vue',import.meta.url),'utf8'),descriptor=parse(source).descriptor
+ const style=compileStyle({source:descriptor.styles.map(block=>block.content).join('\n'),filename:'MemberMultiSelect.vue',id:'member-touch',scoped:false})
+ assert.deepEqual(style.errors,[])
+ // Read parsed declarations, not exact source formatting or declaration order.
+ // Keep !important precedence so a later weak rule cannot mask a tiny input.
+ function effective(width,selector,property){
+  let result
+  style.rawResult.root.walkRules(rule=>{
+   if(!rule.selector.split(',').map(value=>value.trim()).includes(selector))return
+   for(let parent=rule.parent;parent;parent=parent.parent){
+    if(parent.type!=='atrule')continue
+    assert.equal(parent.name,'media','unexpected conditional member styles need explicit test support')
+    const maximum=parent.params.match(/^\(max-width:\s*(\d+)px\)$/)
+    assert(maximum,'unhandled member media condition '+parent.params)
+    if(width>Number(maximum[1]))return
+   }
+   rule.walkDecls(property,decl=>{if(!result?.important||decl.important)result={value:decl.value,important:!!decl.important}})
+  })
+  return result
+ }
+ function pixels(decl){assert.match(decl?.value||'',/^\d+(?:\.\d+)?px$/);return Number.parseFloat(decl.value)}
+ for(const width of [375,390,768,820]){
+  assert.deepEqual(effective(width,'.member-search input','font-size'),{value:'16px',important:true})
+  assert(pixels(effective(width,'.member-search input','min-height'))>=44,'search input touch target at '+width)
+  for(const selector of ['.member-shortcuts button','.member-shortcuts select'])assert(pixels(effective(width,selector,'min-height'))>=44,selector+' touch target at '+width)
+  assert.deepEqual(effective(width,'.member-shortcuts select','font-size'),{value:'16px',important:true})
+  assert(pixels(effective(width,'.member-filter-control','height'))>=44,'compact filter touch target at '+width)
+ }
+ for(const width of [821,1440]){
+  assert.deepEqual(effective(width,'.member-search input','font-size'),{value:'12px',important:true})
+  assert.equal(pixels(effective(width,'.member-search input','height')),32)
+  assert.equal(effective(width,'.member-search input','min-height'),undefined,'mobile height leaked onto desktop')
+ }
+})
 await test('long custom field names wrap while visibility and ordering controls remain reachable',async()=>{const preferences=await readFile(new URL('../src/components/RequirementDetailPreferences.vue',import.meta.url),'utf8'),columns=await readFile(new URL('../src/components/WorkItemColumns.vue',import.meta.url),'utf8'),panel=await readFile(new URL('../src/components/FieldSelectionPanel.vue',import.meta.url),'utf8');for(const source of [preferences,columns])assert.match(source,/<FieldSelectionPanel/);assert.match(panel,/\.field-selection-grid\{grid-template-columns:minmax\(0,1fr\)\}/);assert.match(panel,/\.field-group span\{min-width:0;overflow-wrap:anywhere\}/);assert.match(panel,/\.chosen-label\{flex:1;min-width:0;overflow-wrap:anywhere/);assert.match(panel,/\.field-controls\{display:flex;gap:3px;flex:none\}/)})
 await test('rich text, weights and workflow controls use usable touch dimensions without fixed emoji grids',async()=>{const sources=await Promise.all(['RichTextEditor','RequirementWeights','WorkflowSettings'].map(name=>readFile(new URL('../src/components/'+name+'.vue',import.meta.url),'utf8')));for(const source of sources){const descriptor=parse(source).descriptor;assert.deepEqual(compileStyle({source:descriptor.styles.map(style=>style.content).join('\n'),filename:'touch.vue',id:'touch',scoped:true}).errors,[]);assert.match(source,/@media\(max-width:820px\)/);assert.match(source,/min-height:44px/)}assert.match(sources[0],/grid-template-columns:repeat\(auto-fit,minmax\(44px,1fr\)\)/);assert.match(sources[1],/\.weight-row\{grid-template-columns:minmax\(0,1fr\)/);assert.match(sources[1],/\.weight-quick-trigger\{width:44px;min-height:44px\}/);assert.match(sources[2],/\.edge-cell button\{min-width:44px;min-height:44px/);})
 console.log(`Passed ${count} module responsive selector regressions (375/390/768 px contracts; visual browser QA is separate).`)

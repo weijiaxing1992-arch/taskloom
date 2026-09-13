@@ -42,7 +42,7 @@ func resourceUpload(t *testing.T, a *App, id int64, user, project, name string, 
 	}
 	r := httptest.NewRequest("POST", path, &body)
 	r.Header.Set("Content-Type", writer.FormDataContentType())
-	r.Header.Set("X-DevFlow-Project", project)
+	r.Header.Set("X-TaskLoom-Project", project)
 	cookie, err := a.issueSession(httptest.NewRecorder(), r, user)
 	if err != nil {
 		t.Fatal(err)

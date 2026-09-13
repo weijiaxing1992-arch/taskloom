@@ -1,7 +1,7 @@
 {
   "name": "taskloom-community",
   "private": true,
-  "version": "0.1.0-rc1",
+  "version": "0.2.0-rc1",
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "engines": {
@@ -11,7 +11,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b",
-    "test": "node scripts/test-ai-refinement.mjs && node scripts/test-ai-requirement-title.mjs && node scripts/test-ai-workflow.mjs && node scripts/test-search-highlight.mjs"
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@tiptap/core": "3.31.0",
@@ -26,6 +26,8 @@
     "marked": "18.0.12",
     "pdfjs-dist": "6.3.289",
     "pinia": "4.0.3",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
     "reka-ui": "2.10.4",
     "tailwind-merge": "3.6.0",
     "vue": "3.5.42",
@@ -34,6 +36,8 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "24.13.3",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
     "@types/web-bluetooth": "0.0.21",
     "@vitejs/plugin-vue": "6.0.8",
     "shadcn-vue": "2.8.2",
@@ -43,6 +47,5 @@
     "vite": "7.3.6",
     "vue-component-type-helpers": "3.3.11",
     "vue-tsc": "3.3.11"
-  },
-  "license": "Apache-2.0"
+  }
 }

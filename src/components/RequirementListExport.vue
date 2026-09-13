@@ -29,7 +29,7 @@ async function exportList(){
     if(records.length>requirementExportLimit)throw Error('最多导出 20000 条需求，请缩小筛选范围后分批导出')
     for(const item of records){
       if(!current())return
-      const project=String(item.projectId||projectId),headers={'X-DevFlow-Project':project},signal=operation.signal
+      const project=String(item.projectId||projectId),headers={'X-TaskLoom-Project':project},signal=operation.signal
       if(!contexts.has(project)){
         const [defs,members]=await Promise.all([api<any>('/field-definitions?objectType=requirement',{headers,signal}),api<any>('/members',{headers,signal})])
         if(!current())return

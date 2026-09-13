@@ -431,6 +431,10 @@ func (a *App) requirementCategory(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "category_changed", "分类已被其他人修改，请刷新后重试")
 		return
 	}
+	if err = a.recordRequirementCategoryHistory(r.Context(), tx, currentName, target, now); err != nil {
+		fail(w, 500, "db_error", err.Error())
+		return
+	}
 	res, err = tx.Exec(`UPDATE requirements SET category=?,updated_at=? WHERE tenant_id=? AND project_id=? AND category=?`, target, now, tenantID, a.pid(), currentName)
 	if err != nil {
 		fail(w, 500, "db_error", err.Error())

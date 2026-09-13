@@ -16,6 +16,8 @@ export default {
  '微信登录状态加载失败，请刷新重试':'Could not load WeChat login availability. Please refresh.',
  '微信扫码启动失败':'Could not start WeChat QR login.',
  '正在打开微信…':'Opening WeChat…',
+ '正在检查微信登录…':'Checking WeChat login…',
+ '微信登录未启用':'WeChat login is not enabled',
  '正在检查微信登录配置…':'Checking WeChat login settings…',
  '将打开微信官方扫码页；扫码确认后自动返回。':'The official WeChat QR page will open. You will return after confirming.',
  '管理员尚未启用微信扫码登录':'WeChat QR login has not been enabled by an administrator.',

@@ -11,6 +11,8 @@ const messages: Record<string, string> = {
   '优先级': 'Priority', '例如 CORE': 'For example, CORE', '保存基础信息': 'Save details', '保存字段': 'Save field', '保存步骤': 'Save steps', '保存计划': 'Save plan',
   '修复中': 'Fixing', '停用': 'Disable', '停用用例': 'Disable case', '先在待规划池整理需求，再创建迭代安排交付。': 'Organize requirements in the backlog, then create an iteration to plan delivery.',
   '全局搜索': 'Global search', '全部事件': 'All events', '全部分类': 'All categories', '全部可访问项目': 'All accessible projects', '全部工作项': 'All work items',
+  '搜索迭代': 'Search iterations', '搜索迭代名称、编号或状态': 'Search iteration name, code, or status', '没有匹配的进行中或规划中迭代': 'No matching active or planned iterations', '没有匹配的历史迭代': 'No matching past iterations',
+  '＋ 创建需求': '+ Create requirement', '打开完整需求创建页': 'Open the full requirement editor', '历史迭代不能新增需求': 'Closed iterations cannot add requirements', '打开完整缺陷创建页': 'Open the full defect editor', '历史迭代不能新增缺陷': 'Closed iterations cannot add defects',
   '全部标为已读': 'Mark all as read', '全部消息': 'All messages', '全部状态': 'All statuses', '全部类型': 'All types', '全部项目': 'All projects', '全部项目角色': 'All project roles',
   '共': 'Total ', '关联需求': 'Linked requirement', '关联需求 ID': 'Requirement ID', '关闭': 'Close', '关闭详情': 'Close details', '兼容性测试': 'Compatibility testing',
   '分类': 'Category', '分类 / 标题': 'Category / Title', '切换你参与的产品研发空间，数据与成员权限按项目严格隔离。': 'Switch between your development workspaces. Data and member access are isolated by project.',

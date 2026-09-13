@@ -19,7 +19,7 @@ func languageRequest(t *testing.T, a *App, method, path, user, project, language
 	t.Helper()
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-DevFlow-Project", project)
+	r.Header.Set("X-TaskLoom-Project", project)
 	if language != "" {
 		r.Header.Set("Accept-Language", language)
 	}

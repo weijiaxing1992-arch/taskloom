@@ -20,7 +20,7 @@ function fixture(handler = async () => response()) {
     '../api': { api: async (path, options) => { calls.push({ path, options }); return handler(path, options) } },
     '../i18n': { t: (text, params = {}) => text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? key)) },
   }
-  const names = 'items,selected,baseline,query,loading,saving,loaded,canManage,locked,error,notice,discardOpen,discardPrompt,filtered,added,removed,dirty,mutable,allFilteredSelected,someFilteredSelected,load,toggleMember,toggleFiltered,save,requestClose,keepEditing,discardChanges,canLeave,protectedMember'
+  const names = 'items,selected,baseline,query,loading,saving,loaded,canManage,locked,error,notice,discardOpen,discardPrompt,filtered,added,removed,dirty,mutable,allFilteredSelected,someFilteredSelected,load,toggleMember,toggleFiltered,save,requestClose,keepEditing,discardChanges,canLeave,protectedMember,roleDrafts,roleUpdates'
   const code = ts.transpileModule(descriptor.scriptSetup.content + '\nexport {' + names + '}', { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const window = { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) }
   scope.run(() => new Function('require', 'exports', 'defineProps', 'defineEmits', 'defineExpose', 'window', code)(id => imports[id] || {}, exports, () => props, () => (...args) => emitted.push(args), () => {}, window))
@@ -45,7 +45,7 @@ async function test(name, run) { await run(); count++; console.log('✓ ' + name
 
 await test('candidate loading uses explicit target and opt-in route; inactive candidates remain visible and baseline includes only current members', async () => {
   const m = fixture(); await flush()
-  assert.equal(m.calls[0].path, '/projects/p_one/members?candidates=1'); assert.equal(m.calls[0].options.headers['X-DevFlow-Project'], 'p_one')
+  assert.equal(m.calls[0].path, '/projects/p_one/members?candidates=1'); assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'], 'p_one')
   assert.deepEqual(m.baseline.value, ['self', 'admin', 'old']); assert.deepEqual(m.selected.value, m.baseline.value)
   assert.equal(m.items.value.find(x => x.id === 'inactive').active, false); assert.equal(m.dirty.value, false); await m.save(); assert.equal(m.calls.length, 1); m.stop()
 })
@@ -65,7 +65,7 @@ await test('save writes only incremental IDs and viewer default, then uses canon
   const updated = members.map(x => x.id === 'inactive' ? { ...x, role: 'viewer' } : x.id === 'old' ? { ...x, role: null } : x)
   const m = fixture(async (path, options) => response(options.method === 'PATCH' ? updated : members)); await flush()
   m.toggleMember('inactive', true); m.toggleMember('old', false); await m.save()
-  const write = m.calls[1]; assert.equal(write.path, '/projects/p_one/members'); assert.equal(write.options.headers['X-DevFlow-Project'], 'p_one')
+  const write = m.calls[1]; assert.equal(write.path, '/projects/p_one/members'); assert.equal(write.options.headers['X-TaskLoom-Project'], 'p_one')
   assert.deepEqual(JSON.parse(write.options.body), { addUserIds: ['inactive'], removeUserIds: ['old'], role: 'viewer' })
   assert.equal(m.items.value.find(x => x.id === 'self').role, 'frontend'); assert.equal(m.items.value.find(x => x.id === 'inactive').active, false)
   assert.equal(m.dirty.value, false); assert(m.notice.value); assert.deepEqual(m.emitted, [['changed', 'p_one']]); m.stop()
@@ -170,6 +170,20 @@ await test('templates compile with keyboard controls, theme variables, inactive 
   assert.match(source, /:indeterminate="someFilteredSelected"/); assert.match(source, /role="alert"/); assert.match(source, /@media\(max-width:640px\)/); assert.doesNotMatch(source, /window\.confirm/)
   const projects = read('src/views/Projects.vue'); assert.match(projects, /data\.canManageMembers === true/); assert.match(projects, /@click\.stop="openMembers\(x\)"/); assert.match(projects, /<ProjectMembers v-if="managingMembers"/); assert.match(projects, /JSON\.stringify\(form\)/)
   const create = projects.slice(projects.indexOf('async function create()'), projects.indexOf('async function patch(')); assert.doesNotMatch(create, /await enter\(/); assert.match(create, /createdProject\.value/)
+})
+
+await test('multiple project roles remain isolated drafts and save only changed users alongside the member delta', async () => {
+  const original=person('old','product',{projectRoles:['product','qa']})
+  const m=fixture(async (path,options)=>response(options.method==='PATCH'?[...members.filter(item=>item.id!=='old'),{...original,projectRoles:['product','qa','backend']}]:[...members.filter(item=>item.id!=='old'),original]));await flush()
+  assert.deepEqual(m.roleDrafts.value.old,['product','qa']);m.roleDrafts.value.old.push('backend')
+  assert(m.dirty.value);assert.deepEqual(m.items.value.find(item=>item.id==='old').projectRoles,['product','qa'])
+  m.query.value='no visible members';await m.save()
+  assert.deepEqual(JSON.parse(m.calls[1].options.body),{addUserIds:[],removeUserIds:[],role:'viewer',roleUpdates:{old:['product','qa','backend']}})
+  assert.equal(m.dirty.value,false);m.stop()
+})
+await test('empty role sets do not submit and discard restores role arrays as well as membership selection',async()=>{
+  const m=fixture();await flush();m.roleDrafts.value.old=[];await m.save();assert.equal(m.calls.length,1);assert(m.error.value)
+  m.roleDrafts.value.old=['qa','product'];assert.equal(m.requestClose(),false);m.discardChanges();assert.deepEqual(m.roleDrafts.value.old,['qa']);assert.equal(m.dirty.value,false);m.stop()
 })
 
 console.log(`Passed ${count} isolated project membership UI tests.`)

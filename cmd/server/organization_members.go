@@ -11,8 +11,9 @@ import (
 )
 
 type organizationProjectMembership struct {
-	ProjectID string `json:"projectId"`
-	Role      string `json:"role"`
+	ProjectID string   `json:"projectId"`
+	Role      string   `json:"role"`
+	Roles     []string `json:"roles"`
 }
 type organizationMember struct {
 	ID                  string                          `json:"id"`
@@ -95,16 +96,18 @@ func organizationMemberList(ctx context.Context, store stateStore, id string) ([
 		if err != nil {
 			return nil, err
 		}
-		rows, err = store.QueryContext(ctx, `SELECT pm.project_id,pm.role FROM project_members pm JOIN projects p ON p.tenant_id=pm.tenant_id AND p.id=pm.project_id WHERE pm.tenant_id=? AND pm.user_id=? AND p.status='active' ORDER BY pm.project_id`, tenantID, out[i].ID)
+		rows, err = store.QueryContext(ctx, `SELECT pm.project_id,pm.role,`+projectRolesJSONSQL("pm")+` FROM project_members pm JOIN projects p ON p.tenant_id=pm.tenant_id AND p.id=pm.project_id WHERE pm.tenant_id=? AND pm.user_id=? AND p.status='active' ORDER BY pm.project_id`, tenantID, out[i].ID)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var p organizationProjectMembership
-			if err = rows.Scan(&p.ProjectID, &p.Role); err != nil {
+			var rawRoles string
+			if err = rows.Scan(&p.ProjectID, &p.Role, &rawRoles); err != nil {
 				rows.Close()
 				return nil, err
 			}
+			p.Roles = decodedProjectRoles(rawRoles, p.Role)
 			out[i].ProjectMemberships = append(out[i].ProjectMemberships, p)
 		}
 		err = rows.Err()
@@ -139,6 +142,15 @@ func normalizedOrganizationEmail(email string) (string, error) {
 		return "", orgInvalid("登录邮箱格式无效")
 	}
 	return email, nil
+}
+
+// 只有明确移除的成员释放登录邮箱；停用、业务禁用和目录关系缺失的账号仍占用邮箱。
+// 不删除或复活旧用户，避免新账号继承历史会话、权限、微信绑定或工作项身份。
+// 写入方须在写事务内调用，CSV 预览只作提示，提交时仍由保存路径再次复核。
+func organizationEmailInUse(ctx context.Context, store stateStore, email, excludeID string) (bool, error) {
+	var count int
+	err := store.QueryRowContext(ctx, `SELECT COUNT(*) FROM users u WHERE u.tenant_id=? AND lower(trim(u.email))=? AND u.id!=? AND NOT EXISTS (SELECT 1 FROM tenant_memberships tm WHERE tm.tenant_id=u.tenant_id AND tm.user_id=u.id AND tm.status='removed')`, tenantID, strings.ToLower(strings.TrimSpace(email)), excludeID).Scan(&count)
+	return count > 0, err
 }
 
 // 表单、CSV 和申请审批共用此写路径；完整校验后统一更新用户、部门、企业及项目授权，调用方负责提交事务。
@@ -199,6 +211,12 @@ func (a *App) saveOrganizationMember(ctx context.Context, tx *sql.Tx, admin bool
 	if b.ProjectMemberships != nil {
 		m.ProjectMemberships = append([]organizationProjectMembership{}, (*b.ProjectMemberships)...)
 	}
+	if creating && m.EmployeeNo == "" {
+		m.EmployeeNo, err = nextOrganizationEmployeeNo(ctx, tx)
+		if err != nil {
+			return m, err
+		}
+	}
 	if !validOrgText(m.Name, 1, 80) || !validOrgText(m.EmployeeNo, 0, 64) || !validChoice(m.TenantRole, []string{"member", "tenant_admin"}) {
 		return m, orgInvalid("成员姓名、工号或企业角色无效")
 	}
@@ -210,10 +228,11 @@ func (a *App) saveOrganizationMember(ctx context.Context, tx *sql.Tx, admin bool
 		return m, err
 	}
 	var count int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE tenant_id=? AND lower(email)=? AND id!=?`, tenantID, m.Email, id).Scan(&count); err != nil {
+	emailInUse, err := organizationEmailInUse(ctx, tx, m.Email, id)
+	if err != nil {
 		return m, err
 	}
-	if count > 0 {
+	if emailInUse {
 		return m, orgConflict("邮箱或成员已存在")
 	}
 	if !creating && id == a.uid() && (!m.Active || m.OperationDisabled) {
@@ -294,11 +313,19 @@ func (a *App) saveOrganizationMember(ctx context.Context, tx *sql.Tx, admin bool
 	}
 	seen := map[string]bool{}
 	oldProjects := map[string]string{}
+	oldRoles := map[string][]string{}
 	for _, p := range old.ProjectMemberships {
 		oldProjects[p.ProjectID] = p.Role
+		oldRoles[p.ProjectID] = p.Roles
 	}
-	for _, p := range m.ProjectMemberships {
-		if seen[p.ProjectID] || p.ProjectID == "" || (!validProjectRole(p.Role) && !(p.Role == "tenant_admin" && oldProjects[p.ProjectID] == p.Role)) {
+	for index := range m.ProjectMemberships {
+		p := &m.ProjectMemberships[index]
+		p.Roles, err = normalizedProjectRoles(p.Roles, p.Role)
+		if err != nil {
+			return m, err
+		}
+		p.Role = p.Roles[0]
+		if seen[p.ProjectID] || p.ProjectID == "" || (validChoice("tenant_admin", p.Roles) && !validChoice("tenant_admin", oldRoles[p.ProjectID])) {
 			return m, orgInvalid("项目或项目角色无效")
 		}
 		seen[p.ProjectID] = true
@@ -313,7 +340,7 @@ func (a *App) saveOrganizationMember(ctx context.Context, tx *sql.Tx, admin bool
 		if status != "active" && oldProjects[p.ProjectID] != p.Role {
 			return m, orgInvalid("不能授权已归档项目")
 		}
-		if !admin && (p.Role == "project_admin" || p.Role == "tenant_admin") && oldProjects[p.ProjectID] != p.Role {
+		if !admin && rolesOverlap(p.Roles, []string{"project_admin", "tenant_admin"}) && jsonText(oldRoles[p.ProjectID]) != jsonText(p.Roles) {
 			return m, orgForbidden()
 		}
 	}
@@ -322,7 +349,7 @@ func (a *App) saveOrganizationMember(ctx context.Context, tx *sql.Tx, admin bool
 			if role == "project_admin" || role == "tenant_admin" {
 				unchanged := false
 				for _, p := range m.ProjectMemberships {
-					unchanged = unchanged || (p.ProjectID == pid && p.Role == role)
+					unchanged = unchanged || (p.ProjectID == pid && jsonText(p.Roles) == jsonText(oldRoles[pid]))
 				}
 				if !unchanged {
 					return m, orgForbidden()
@@ -382,6 +409,9 @@ func (a *App) saveOrganizationMember(ctx context.Context, tx *sql.Tx, admin bool
 			return m, err
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO project_members(tenant_id,project_id,user_id,role,created_at,updated_at)VALUES(?,?,?,?,?,?)`, tenantID, p.ProjectID, m.ID, p.Role, now, now); err != nil {
+			return m, err
+		}
+		if err = replaceProjectMemberRoles(ctx, tx, p.ProjectID, m.ID, p.Roles); err != nil {
 			return m, err
 		}
 	}
@@ -577,15 +607,25 @@ func (a *App) legacyMemberWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !permissions["members.manage"] {
-		if a.impersonation != nil || r.Method != http.MethodPatch || len(raw) != 1 || raw["projectRole"] == nil {
+		if a.impersonation != nil || r.Method != http.MethodPatch || len(raw) != 1 || raw["projectRole"] == nil && raw["projectRoles"] == nil {
 			failOrganization(w, orgForbidden())
 			return
 		}
 		var role string
-		if json.Unmarshal(raw["projectRole"], &role) != nil || !validProjectRole(role) {
+		var roles []string
+		if value := raw["projectRoles"]; value != nil {
+			err = json.Unmarshal(value, &roles)
+		} else {
+			err = json.Unmarshal(raw["projectRole"], &role)
+		}
+		if err == nil {
+			roles, err = normalizedProjectRoles(roles, role)
+		}
+		if err != nil || validChoice("tenant_admin", roles) {
 			failOrganization(w, orgInvalid("项目或项目角色无效"))
 			return
 		}
+		role = roles[0]
 		tx, err := a.db.BeginTx(r.Context(), nil)
 		if err != nil {
 			failOrganization(w, err)
@@ -596,14 +636,21 @@ func (a *App) legacyMemberWrite(w http.ResponseWriter, r *http.Request) {
 			failOrganization(w, err)
 			return
 		}
+		if err = a.requireAdministrationSession(r.Context(), tx); err == nil {
+			err = a.requireOperationAccess(r.Context(), tx)
+		}
+		if err != nil {
+			failOrganization(w, err)
+			return
+		}
 		var n int
 		err = tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM project_members pm JOIN users u ON u.tenant_id=pm.tenant_id AND u.id=pm.user_id JOIN tenant_memberships tm ON tm.tenant_id=u.tenant_id AND tm.user_id=u.id WHERE pm.tenant_id=? AND pm.project_id=? AND pm.user_id=? AND pm.role='project_admin' AND u.active=1 AND tm.status='active'`, tenantID, a.pid(), a.uid()).Scan(&n)
 		if err == nil && n != 1 {
 			err = orgForbidden()
 		}
-		var before string
+		var before, beforeRolesJSON string
 		if err == nil {
-			err = tx.QueryRowContext(r.Context(), `SELECT role FROM project_members WHERE tenant_id=? AND project_id=? AND user_id=?`, tenantID, a.pid(), id).Scan(&before)
+			err = tx.QueryRowContext(r.Context(), `SELECT pm.role,`+projectRolesJSONSQL("pm")+` FROM project_members pm WHERE pm.tenant_id=? AND pm.project_id=? AND pm.user_id=?`, tenantID, a.pid(), id).Scan(&before, &beforeRolesJSON)
 			if errors.Is(err, sql.ErrNoRows) {
 				err = orgNotFound()
 			}
@@ -615,7 +662,10 @@ func (a *App) legacyMemberWrite(w http.ResponseWriter, r *http.Request) {
 			_, err = tx.ExecContext(r.Context(), `UPDATE memberships SET role=? WHERE tenant_id=? AND project_id=? AND user_id=?`, role, tenantID, a.pid(), id)
 		}
 		if err == nil {
-			err = a.organizationAudit(r.Context(), tx, "user", id, "project_member_role_changed", map[string]string{"projectId": a.pid(), "role": before}, map[string]string{"projectId": a.pid(), "role": role})
+			err = replaceProjectMemberRoles(r.Context(), tx, a.pid(), id, roles)
+		}
+		if err == nil {
+			err = a.organizationAudit(r.Context(), tx, "user", id, "project_member_role_changed", map[string]any{"projectId": a.pid(), "role": before, "roles": decodedProjectRoles(beforeRolesJSON, before)}, map[string]any{"projectId": a.pid(), "role": role, "roles": roles})
 		}
 		if err == nil {
 			err = tx.Commit()
@@ -628,9 +678,24 @@ func (a *App) legacyMemberWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var projectRole *string
+	var projectRoles []string
+	if value, ok := raw["projectRoles"]; ok {
+		if json.Unmarshal(value, &projectRoles) != nil {
+			failOrganization(w, orgInvalid("项目或项目角色无效"))
+			return
+		}
+		projectRoles, err = normalizedProjectRoles(projectRoles, "")
+		if err != nil || validChoice("tenant_admin", projectRoles) {
+			failOrganization(w, orgInvalid("项目或项目角色无效"))
+			return
+		}
+		role := projectRoles[0]
+		projectRole = &role
+		delete(raw, "projectRoles")
+	}
 	if value, ok := raw["projectRole"]; ok {
 		var role string
-		if json.Unmarshal(value, &role) != nil || !validProjectRole(role) {
+		if projectRoles != nil || json.Unmarshal(value, &role) != nil || !validProjectRole(role) {
 			failOrganization(w, orgInvalid("项目或项目角色无效"))
 			return
 		}
@@ -716,11 +781,12 @@ func (a *App) legacyMemberWrite(w http.ResponseWriter, r *http.Request) {
 		for i := range projects {
 			if projects[i].ProjectID == a.pid() {
 				projects[i].Role = role
+				projects[i].Roles = projectRoles
 				found = true
 			}
 		}
 		if !found {
-			projects = append(projects, organizationProjectMembership{a.pid(), role})
+			projects = append(projects, organizationProjectMembership{ProjectID: a.pid(), Role: role, Roles: projectRoles})
 		}
 		b.ProjectMemberships = &projects
 	}

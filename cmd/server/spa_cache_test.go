@@ -46,6 +46,26 @@ func TestSPAEntryNeverReusesStaleHTML(t *testing.T) {
 	}
 }
 
+func TestSPAPortalDirectoryServesPublicPortal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "portal"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "portal", "index.html"), []byte("public downloads"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("private app"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/portal", "/portal/"} {
+		w := httptest.NewRecorder()
+		spa(dir).ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != 200 || w.Body.String() != "public downloads" || !strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestSPAAssetsKeepMIMEAndMissingAssetsAreNotHTML(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "assets"), 0700); err != nil {

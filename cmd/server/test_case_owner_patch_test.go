@@ -201,7 +201,7 @@ func TestTestCasePatchOwnerConcurrentSameStableIDDoesNotDuplicateNotice(t *testi
 			<-start
 			r := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/test-cases/%d", item.ID), bytes.NewBufferString(`{"owner":"并发缓存名","ownerUserId":"u_back"}`))
 			r.Header.Set("Content-Type", "application/json")
-			r.Header.Set("X-DevFlow-Project", projectID)
+			r.Header.Set("X-TaskLoom-Project", projectID)
 			r.AddCookie(cookie)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, r)

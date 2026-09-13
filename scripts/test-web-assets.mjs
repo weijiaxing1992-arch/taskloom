@@ -69,7 +69,12 @@ test('same directory and nested release paths cannot be used', ({ oldWeb, newWeb
   assert.throws(() => retainWebAssets(oldWeb, nested), /non-nested/)
   assert.equal(readFileSync(join(newWeb, 'index.html'), 'utf8'), 'new entry')
 })
-test('in-place Vite builds retain content-hashed resources by default', () => {
-  assert.match(readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8'), /build:\s*\{\s*emptyOutDir:\s*false\s*\}/)
+test('community Vite builds use clean output and never copy a private portal', () => {
+  const viteConfig = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8')
+  // Retention above is an explicit deployment step between reviewed releases.
+  // A fresh community build must not publish obsolete files left in its output.
+  assert.match(viteConfig, /build:\s*\{\s*emptyOutDir:\s*true(?:\s*,|\s*\})/)
+  assert.match(viteConfig, /publicDir:\s*false/)
+  for (const entry of ['index.html', 'mobile.html']) assert(viteConfig.includes(entry))
 })
 console.log(`Passed ${count} web asset retention regressions.`)

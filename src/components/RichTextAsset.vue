@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, onBeforeUnmount, ref, shallowRef, watch, type ComputedRef } from 'vue'
+import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref, shallowRef, watch, type ComputedRef } from 'vue'
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
 import AssetIcon from './AssetIcon.vue'
 import AssetCodePreview from './AssetCodePreview.vue'
 import {assetCategories,assetCategory,assetLanguage,assetLabel} from '../attachmentAssets'
 import { api, apiDownload } from '../api'
+import { observeVisibleAsset } from '../visibleAsset'
 import { t } from '../i18n'
 import ImagePreview from './ImagePreview.vue'
 import { base64ToBytes, richAssetContextKey, richAssetName, richImageType, type RichAssetContext } from '../richText'
@@ -12,6 +13,8 @@ import { base64ToBytes, richAssetContextKey, richAssetName, richImageType, type 
 const props = defineProps(nodeViewProps)
 const context = inject<ComputedRef<RichAssetContext>>(richAssetContextKey, computed(() => ({ requirementId: undefined, readonly: true, disabled: true })))
 const loading = ref(false), error = ref(''), imageURL = ref('')
+const visibilityAnchor = ref<HTMLElement | null>(null)
+let stopVisibility: (() => void) | undefined
 const blob = shallowRef<Blob | null>(null)
 const image = computed(() => props.node.type.name === 'image')
 const pending = computed(() => !props.node.attrs.attachmentId && !!props.node.attrs.data)
@@ -71,19 +74,27 @@ function openPreview() {
   previewItems.value = index >= 0 ? images : [{ key: 'current', name: name.value, blob: blob.value }]
   previewIndex.value = index >= 0 ? index : 0; previewOpen.value = true
 }
-watch([() => props.node.attrs.attachmentId, () => props.node.attrs.data, () => context.value.requirementId], () => {
-  previewOpen.value = false; codeOpen.value=false;metadata.value={};void loadMetadata(); ++version; releasePreview(); error.value = ''; loading.value = false
-  if (image.value || pending.value) void load()
+watch([() => props.node.attrs.attachmentId, () => props.node.attrs.data, () => context.value.requirementId], async () => {
+  stopVisibility?.(); previewOpen.value = false; codeOpen.value=false;metadata.value={}; ++metadataVersion; ++version; releasePreview(); error.value = ''; loading.value = false
+  const current = version
+  await nextTick()
+  if (disposed || current !== version || !visibilityAnchor.value) return
+  stopVisibility = observeVisibleAsset(visibilityAnchor.value, () => {
+    void loadMetadata()
+    if ((image.value || pending.value) && !loading.value && !blob.value) void load()
+  })
 }, { immediate: true })
 function metadataChanged(event:Event){const detail=(event as CustomEvent).detail;if(detail?.requirementId===context.value.requirementId&&detail?.attachmentId===props.node.attrs.attachmentId)void loadMetadata()}
 onMounted(()=>window.addEventListener('devflow-asset-classified',metadataChanged))
-onBeforeUnmount(() => { if(typeof window!=='undefined')window.removeEventListener('devflow-asset-classified',metadataChanged);disposed = true; version++; releasePreview(); for (const url of downloadURLs) URL.revokeObjectURL(url); downloadURLs.clear() })
+onBeforeUnmount(() => { stopVisibility?.(); if(typeof window!=='undefined')window.removeEventListener('devflow-asset-classified',metadataChanged);disposed = true; version++; releasePreview(); for (const url of downloadURLs) URL.revokeObjectURL(url); downloadURLs.clear() })
 </script>
 
 <template>
   <NodeViewWrapper class="rich-asset" :class="{ 'rich-asset-image': image, 'is-selected': selected }" contenteditable="false">
+    <span ref="visibilityAnchor" class="rich-asset-visibility" aria-hidden="true"></span>
     <button v-if="imageURL" type="button" class="rich-image-frame" :aria-label="t('放大预览 {name}',{name})" @click="openPreview"><img :src="imageURL" :alt="String(node.attrs.alt || name)" draggable="false" loading="lazy"></button>
     <div v-else-if="image && loading" class="rich-image-placeholder" role="status">{{ t('正在载入图片…') }}</div>
+    <button v-else-if="image && !error" type="button" class="rich-image-placeholder" @click="load">{{ t('查看图片') }}</button>
     <div class="rich-asset-caption"><AssetIcon :category="category" :language="language"/><span class="rich-asset-name">{{ name }}<small v-if="pending">{{ t('待保存') }}</small></span><select v-if="pending&&!context.readonly" :disabled="context.disabled" :value="category" :aria-label="t('附件资产分类')" @change="changeCategory"><option v-for="item in assetCategories" :key="item.value" :value="item.value">{{t(item.label)}}</option></select><small v-else>{{t(assetLabel(category))}}</small><button v-if="!image&&(language||['code','api'].includes(category))" type="button" @click="codeOpen=!codeOpen">{{t(codeOpen?'收起代码':language?'代码预览':'文本预览')}}</button><button type="button" :disabled="loading" @click="download">{{ t('下载') }}</button><button v-if="!context.readonly" type="button" :disabled="context.disabled" :aria-label="t('从正文移除附件')" @click="remove">{{ t('移除') }}</button></div>
     <p v-if="error" class="rich-asset-error" role="alert">{{ t(error) }} <button type="button" :disabled="loading" @click="load">{{ t('重试') }}</button></p>
     <AssetCodePreview v-if="codeOpen" :name="name" :requirement-id="context.requirementId" :attachment-id="node.attrs.attachmentId" :data="node.attrs.data" @close="codeOpen=false"/>
@@ -97,4 +108,5 @@ onBeforeUnmount(() => { if(typeof window!=='undefined')window.removeEventListene
 
 <style scoped>
 .rich-asset .rich-image-frame{display:flex;width:100%;padding:0;border:0;border-bottom:1px solid #e7eaf0;border-radius:0;cursor:zoom-in}
+.rich-asset-visibility{display:block;width:100%;height:1px}.rich-asset>button.rich-image-placeholder{display:block;width:100%;min-height:100px;padding:28px 12px;background:var(--surface-muted,#f5f7fb);font-size:12px}
 </style>

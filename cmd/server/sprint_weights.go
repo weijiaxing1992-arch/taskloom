@@ -69,6 +69,7 @@ func (a *App) sprintWeightSummary(ctx context.Context, name string) (SprintWeigh
 		if err := rows.Scan(&item.ID, &item.Code, &item.Title, &item.Status, &parent, &raw); err != nil {
 			return out, err
 		}
+		item.Code = requirementDisplayCode(item.ID, item.Code)
 		if parent.Valid {
 			id := parent.Int64
 			item.ParentID = &id

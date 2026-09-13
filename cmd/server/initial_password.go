@@ -47,6 +47,8 @@ func validateInitialPassword(value string) error {
 func configuredInitialPassword() (string, error) {
 	value := os.Getenv("DEVFLOW_INITIAL_PASSWORD")
 	if value == "" {
+		// Only the first community administrator has a public bootstrap password.
+		// Other accounts require an explicitly configured or administrator-set one.
 		return "", nil
 	}
 	if err := validateInitialPassword(value); err != nil {
@@ -69,14 +71,22 @@ func (a *App) allowInitialPasswordRequest(w http.ResponseWriter, r *http.Request
 		fail(w, 503, "database_unavailable", "账号服务暂时繁忙，请稍后重试")
 		return false
 	}
+	// An explicitly marked administrator review of a newly provisioned account
+	// must not turn into a way to set that member's personal credential. It is
+	// intentionally limited to safe reads; resolveImpersonation rejects every
+	// mutation before it reaches this gate. Do not use this branch for a normal
+	// login, or for a normal (writable) delegated session.
+	if required && impersonation != nil && impersonation.ReadOnly && (r.Method == http.MethodGet || r.Method == http.MethodHead || readOnlyImpersonationProjectVisit(r)) {
+		return true
+	}
 	if !required && r.URL.Path != "/api/auth/initial-password" {
 		return true
 	}
-	if r.URL.Path == "/api/auth/initial-password" && r.Header.Get("X-DevFlow-Expected-User") == "" {
+	if r.URL.Path == "/api/auth/initial-password" && r.Header.Get("X-TaskLoom-Expected-User") == "" {
 		fail(w, 409, "identity_changed", "账号身份已在其他页面切换，请刷新后继续")
 		return false
 	}
-	if expected := r.Header.Get("X-DevFlow-Expected-User"); expected != "" && expected != p.UserID {
+	if expected := r.Header.Get("X-TaskLoom-Expected-User"); expected != "" && expected != p.UserID {
 		fail(w, 409, "identity_changed", "账号身份已在其他页面切换，请刷新后继续")
 		return false
 	}
@@ -109,7 +119,7 @@ func (a *App) initialPasswordSession(w http.ResponseWriter, r *http.Request, use
 // 昂贵 bcrypt 在写事务外运行；提交前复核账号、会话、原密码摘要和待改密标志，防并发覆盖管理员重置。
 func (a *App) changeInitialPassword(w http.ResponseWriter, r *http.Request, p sessionPrincipal) {
 	w.Header().Set("Cache-Control", "no-store")
-	if expected := r.Header.Get("X-DevFlow-Expected-User"); expected == "" || expected != p.UserID {
+	if expected := r.Header.Get("X-TaskLoom-Expected-User"); expected == "" || expected != p.UserID {
 		fail(w, 409, "identity_changed", "账号身份已在其他页面切换，请刷新后继续")
 		return
 	}

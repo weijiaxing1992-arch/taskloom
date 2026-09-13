@@ -1,9 +1,28 @@
 const messages: Record<string, string> = {
+  '正在打开页面…': 'Opening page…',
+  '页面暂时无法打开，可重试或留在当前页面。': 'This page could not be opened. Retry or stay on the current page.',
+  '重试打开': 'Retry opening',
+  '重试仍未成功。请先保存当前内容，再重新打开页面。': 'Retry failed. Save your current work before reopening the page.',
+  '重新打开页面': 'Reopen page',
+  '确认重新打开': 'Confirm reopening',
+  '重新打开会离开当前页，未保存的内容可能丢失。请先保存；确认现在重新打开吗？': 'Reopening leaves the current page and may discard unsaved changes. Save first. Reopen now?',
+  '留在当前页': 'Stay here',
+  '这个页面不存在': 'This page does not exist',
+  '链接可能已变更。可以返回我的工作，或通过全局搜索查找内容。': 'The link may have changed. Return to My Work or find the content with global search.',
+  '返回我的工作': 'Back to My Work',
+  '跳到页面内容': 'Skip to page content',
   '项目协作': 'Project collaboration',
   '交付路线图': 'Delivery roadmap',
   '项目仪表盘': 'Project dashboard',
   '拖动项目导航调整顺序，或按 Alt + ← / →': 'Drag project navigation to reorder, or press Alt + ← / →.',
   '项目导航顺序已调整': 'Project navigation order updated',
+  '移动端预览': 'Mobile preview',
+  '与手机端使用相同页面和数据': 'Uses the same pages and data as the mobile app',
+  '使用当前账号和项目数据，仅用于查看效果': 'Uses the current account and project data for preview only.',
+  '独立打开': 'Open separately',
+  '移动端页面': 'Mobile screens',
+  '我的工作移动端预览': 'My work mobile preview',
+  '通知中心移动端预览': 'Notifications mobile preview',
 }
 
 export default messages

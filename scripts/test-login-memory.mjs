@@ -17,11 +17,21 @@ function mount(store, api = async () => ({})) {
 }
 let count = 0
 async function test(name, fn) { await fn(); count++; console.log('✓ ' + name) }
-await test('cache is email-only and malformed or unavailable storage does not block login', () => {
+await test('cache stores only a valid email or the community Admin alias; malformed or unavailable storage does not block login', () => {
   for (const input of [null, '{}', 'a@', 'a @b.test', 'a\n@b.test', 'x'.repeat(250) + '@b.test']) assert.equal(helper.normalizeLoginEmail(input), '')
   assert.equal(helper.readLoginEmail(storage(' User@Example.test ')), 'user@example.test')
+  for(const value of ['Admin','admin',' ADMIN '])assert.equal(helper.normalizeLoginEmail(value),'Admin')
+  for(const value of ['Administrator','admin\nuser','123456'])assert.equal(helper.normalizeLoginEmail(value),'')
   assert.equal(helper.readLoginEmail({ getItem() { throw Error('denied') } }), '')
   assert.doesNotThrow(() => helper.saveLoginEmail({ setItem() { throw Error('denied') } }, 'user@example.test'))
+})
+await test('community Admin can sign in without browser email validation and never stores its password',async()=>{
+  const s=storage(),m=mount(s);m.c.form.email='Admin';m.c.form.password='123456';await m.c.login()
+  assert.deepEqual(JSON.parse(m.calls[0][1].body),{email:'Admin',password:'123456'})
+  assert.equal(s.values.get(helper.loginEmailKey),'Admin');assert.equal(m.c.form.password,'');assert.deepEqual(m.events,['authenticated'])
+  assert.equal(JSON.stringify([...s.values]).includes('123456'),false)
+  assert.match(source,/<input[^>]*name="username"[^>]*type="text"/)
+  assert.match(source,/账号或邮箱/)
 })
 await test('initial email restores while password remains empty; quick-fill focuses password', async () => {
   const s = storage('last@example.test'), m = mount(s); assert.equal(m.c.form.email, 'last@example.test'); assert.equal(m.c.form.password, '')
@@ -47,7 +57,20 @@ await test('pending sign-in prevents duplicate submission or quick-fill changes'
 await test('login markup supports native password managers; profile WeCom has its own padding and table scrolling', () => {
   assert.deepEqual(compileTemplate({ id: 'login-memory', filename: 'Login.vue', source: descriptor.template.content, compilerOptions: { bindingMetadata: script.bindings } }).errors, [])
   assert.match(source, /name="username"/); assert.match(source, /autocomplete="current-password"/); assert.match(source, /type="button" class="login-email-chip"/)
-  assert.match(read('src/views/Profile.vue'), /profile-wecom-panel\{padding:24px/)
+  assert.match(read('src/views/Profile.vue'), /\.profile-wecom-panel,\.profile-wechat-panel,\.profile-wecom-app-panel\{padding:24px/)
   assert.match(read('src/components/UserWecomWebhook.vue'), /\.wecom-table-wrap\{overflow:auto/)
+})
+await test('an abnormal login requires the one-time answer but never persists passwords or verification data',async()=>{
+  const challenge={id:'c'.repeat(32),image:'data:image/png;base64,aA==',expiresAt:Math.floor(Date.now()/1000)+120},s=storage(),m=mount(s,async()=>{if(m.calls.length===1)throw Object.assign(Error('Security check'),{status:401,code:'login_challenge_required',details:{challenge}});return{authenticated:true}})
+  m.c.form.email='member@example.test';m.c.form.password='memory-only';await m.c.login();assert.deepEqual(m.c.challenge.value,challenge);assert.equal(m.c.form.password,'memory-only');assert.equal(m.events.length,0);assert.equal(s.values.size,0)
+  await m.c.login();assert.equal(m.calls.length,1);m.c.challengeAnswer.value='ab2345';await m.c.login()
+  assert.deepEqual(JSON.parse(m.calls[1][1].body),{email:'member@example.test',password:'memory-only',challengeId:challenge.id,challengeAnswer:'ab2345'});assert.equal(m.c.form.password,'');assert.equal(m.c.challenge.value,null);assert.equal(m.c.challengeAnswer.value,'');assert.deepEqual(m.events,['authenticated']);assert.equal(s.values.size,1)
+})
+await test('expired or mismatched verification cannot silently submit; refresh never reuses an answer',async()=>{
+  const next={id:'d'.repeat(32),image:'data:image/png;base64,aA==',expiresAt:Math.floor(Date.now()/1000)+120},m=mount(storage(),async()=>{throw Object.assign(Error('Security check'),{status:401,code:'login_challenge_required',details:{challenge:next}})})
+  m.c.form.email='member@example.test';await Vue.nextTick();m.c.challenge.value={...next,expiresAt:Math.floor(Date.now()/1000)-1};m.c.challengeAnswer.value='old-code';await m.c.login();assert.equal(m.calls.length,0)
+  await m.c.login(true);assert.equal(JSON.parse(m.calls[0][1].body).refreshChallenge,true);assert.equal(m.c.challengeAnswer.value,'');assert.equal(m.c.challenge.value.id,next.id)
+  m.c.form.email='different@example.test';await Vue.nextTick();assert.equal(m.c.challenge.value,null);assert.equal(m.c.challengeAnswer.value,'')
+  for(const bad of [{...next,image:'https://evil.example/image'},{...next,image:'data:image/svg+xml;base64,aA=='},{...next,expiresAt:Date.now()+99999},{...next,id:'invalid'}])assert.equal(m.c.parseChallenge(bad),null)
 })
 console.log(`Passed ${count} sign-in memory and profile layout regressions.`)

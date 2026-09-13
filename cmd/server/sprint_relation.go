@@ -225,6 +225,9 @@ func (a *App) patchSprint(w http.ResponseWriter, r *http.Request, id int64) {
 		}
 	}
 	if err == nil && next.Name != current.Name {
+		err = a.recordSprintRequirementHistory(r.Context(), tx, a1, a2, next.Name, actor, now, false)
+	}
+	if err == nil && next.Name != current.Name {
 		for _, table := range []string{"requirements", "defects", "test_plans"} {
 			if _, err = tx.Exec(`UPDATE `+table+` SET sprint=?,updated_at=? WHERE tenant_id=? AND project_id=? AND sprint IN (?,?)`, next.Name, now, tenantID, a.pid(), a1, a2); err != nil {
 				break

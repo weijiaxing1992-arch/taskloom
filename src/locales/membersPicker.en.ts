@@ -1,4 +1,5 @@
 export default {
+ '首位为主负责人': 'The first member is the primary owner',
  '最近提及': 'Recently mentioned',
   '最近选择': 'Recently selected',
   '清除最近选择': 'Clear recently selected',

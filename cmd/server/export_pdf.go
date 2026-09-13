@@ -80,7 +80,13 @@ func (a *App) exportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%04d.pdf"`, map[string]string{"requirement": "REQ", "defect": "BUG"}[parts[0]], id))
+	filename := fmt.Sprintf("BUG-%04d.pdf", id)
+	if parts[0] == "requirement" {
+		// document.code is normalized from the canonical requirement ID in
+		// workPDF, including records that still store a historic REQ-* value.
+		filename = document.code + ".pdf"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
@@ -143,7 +149,7 @@ func (a *App) workPDF(object string, id int64) (workPDF, error) {
 		}
 		out.code = x.Code
 		if out.code == "" {
-			out.code = fmt.Sprintf("REQ-%04d", id)
+			out.code = requirementDisplayCode(id, "")
 		}
 		out.title = x.Title
 		add("基本信息 / Information", fmt.Sprintf("状态: %s    优先级: %s    分类: %s\n迭代: %s\n处理人: %s\n产品负责人: %s\n创建时间: %s\n更新时间: %s", x.StatusName, x.Priority, x.Category, x.Sprint, names(x.AssigneeUserIDs, x.Assignee), names(x.OwnerUserIDs, x.Owner), pdfDate(x.CreatedAt), pdfDate(x.UpdatedAt)))
@@ -151,7 +157,7 @@ func (a *App) workPDF(object string, id int64) (workPDF, error) {
 			var title, code string
 			err = a.db.QueryRow(`SELECT code,title FROM requirements WHERE tenant_id=? AND project_id=? AND id=?`, tenantID, a.pid(), *x.ParentID).Scan(&code, &title)
 			if err == nil {
-				add("父需求 / Parent", code+" · "+title)
+				add("父需求 / Parent", requirementDisplayCode(*x.ParentID, code)+" · "+title)
 			} else if !errors.Is(err, sql.ErrNoRows) {
 				return out, err
 			}
@@ -210,7 +216,7 @@ func (a *App) workPDF(object string, id int64) (workPDF, error) {
 			var code, title string
 			err = a.db.QueryRow(`SELECT code,title FROM requirements WHERE tenant_id=? AND project_id=? AND id=?`, tenantID, a.pid(), *x.RequirementID).Scan(&code, &title)
 			if err == nil {
-				add("关联需求 / Requirement", code+" · "+title)
+				add("关联需求 / Requirement", requirementDisplayCode(*x.RequirementID, code)+" · "+title)
 			} else if !errors.Is(err, sql.ErrNoRows) {
 				return out, err
 			}

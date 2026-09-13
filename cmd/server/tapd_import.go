@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -84,6 +86,34 @@ func (a *App) existingTapdImport(tx *sql.Tx, in *tapdImport) (id int64, same boo
 	return id, digest == in.digest, err
 }
 
+// 历史迁移不是普通的新建/状态流转：仅经验证的 TAPD 导入和事务内管理员
+// 可保留目标项目的已启用状态。不自动创建状态，也不改变普通创建/PATCH 规则。
+func (a *App) validateRequirementImportState(ctx context.Context, tx *sql.Tx, x *Requirement) error {
+	if x.TapdImport == nil {
+		_, err := a.validateRequirementStateWrite(ctx, tx, x, true, true)
+		return err
+	}
+	if err := a.requireStateManager(ctx, tx); err != nil {
+		return err
+	}
+	if x.Status == "" {
+		_, err := a.validateRequirementStateWrite(ctx, tx, x, true, true)
+		return err
+	}
+	var enabled bool
+	err := tx.QueryRowContext(ctx, `SELECT enabled FROM requirement_statuses WHERE tenant_id=? AND project_id=? AND key=?`, tenantID, a.pid(), x.Status).Scan(&enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return invalidState("需求状态不存在或不属于当前项目")
+	}
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return invalidState("该需求状态已停用，不能再选择")
+	}
+	return nil
+}
+
 // 需求、原始文件、机器可读对照表和幂等键必须共用事务；任何一步失败均不留半条需求。
 func (a *App) persistTapdImport(tx *sql.Tx, x *Requirement, in *tapdImport) error {
 	source := *in
@@ -106,5 +136,10 @@ func (a *App) persistTapdImport(tx *sql.Tx, x *Requirement, in *tapdImport) erro
 		}
 	}
 	_, err = tx.Exec(`INSERT INTO requirement_tapd_imports(tenant_id,project_id,requirement_id,source_key,sha256,created_by,created_at) VALUES(?,?,?,?,?,?,?)`, tenantID, a.pid(), x.ID, in.WorkspaceID+":"+in.SourceID, in.digest, a.uid(), x.CreatedAt)
+	if err == nil {
+		// 与需求、原图、来源文件、防重键同一事务；不得伪造历史流转人或时间。
+		audit := map[string]any{"source": "TAPD", "mode": "historical_state_import", "sourceKey": in.WorkspaceID + ":" + in.SourceID, "status": x.Status, "sha256": in.digest}
+		_, err = tx.Exec(`INSERT INTO audit_logs(tenant_id,project_id,actor_id,object_type,object_id,action,after_json,created_at)VALUES(?,?,?,?,?,?,?,?)`, tenantID, a.pid(), a.uid(), "requirement", fmt.Sprint(x.ID), "tapd_import", jsonText(audit), x.CreatedAt)
+	}
 	return err
 }

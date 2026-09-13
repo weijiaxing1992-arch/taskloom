@@ -141,3 +141,65 @@ func TestAuditHistoryCursorAndAuthorization(t *testing.T) {
 		t.Fatalf("audit history accepted write method: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestAuditHistoryAcceptsCalendarDateFormatsWithoutChangingCursorPagination(t *testing.T) {
+	a := testApp(t)
+	firstID := insertAuditHistoryRecord(t, a, tenantID, projectID, "u_admin", "requirement", "61", "requirement.description_saved", `{}`, `{"title":"第一条"}`, "2026-04-07T08:00:00Z")
+	secondID := insertAuditHistoryRecord(t, a, tenantID, projectID, "u_admin", "requirement", "62", "requirement.description_saved", `{"title":"第一条"}`, `{"title":"第二条"}`, "2026-04-07T08:00:01Z")
+	// 少量内嵌 WebView 日历控件会传入斜杠日期。它必须与 HTML 日期控件
+	// 选中相同的完整自然日，并在下一页继续使用同一套稳定游标。
+	w := apiRequest(a, http.MethodGet, "/api/audit-logs?action=requirement.description_saved&from=2026/04/07&to=2026/04/07&limit=1", "u_admin", projectID, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("slash date audit query failed: %d %s", w.Code, w.Body.String())
+	}
+	first := jsonMap(t, w)
+	items := auditItems(t, first)
+	if len(items) != 1 || int64(items[0]["id"].(float64)) != secondID {
+		t.Fatalf("slash date range did not include the current day: %#v", items)
+	}
+	cursor, _ := first["nextCursor"].(string)
+	if cursor == "" {
+		t.Fatalf("slash date first page unexpectedly lacks cursor: %#v", first)
+	}
+	w = apiRequest(a, http.MethodGet, "/api/audit-logs?action=requirement.description_saved&from=2026-04-07&to=2026-04-07&limit=1&cursor="+cursor, "u_admin", projectID, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("dash date cursor query failed: %d %s", w.Code, w.Body.String())
+	}
+	next := auditItems(t, jsonMap(t, w))
+	if len(next) != 1 || int64(next[0]["id"].(float64)) != firstID {
+		t.Fatalf("calendar format switch duplicated or skipped history: %#v", next)
+	}
+	if _, err := parseAuditBound("2026/02/30", false); err == nil {
+		t.Fatal("invalid slash date was accepted")
+	}
+}
+
+func TestAuditHistoryDateFiltersAndCursorHandleFractionalSecondTimestamps(t *testing.T) {
+	a := testApp(t)
+	wholeSecondID := insertAuditHistoryRecord(t, a, tenantID, projectID, "u_admin", "requirement", "71", "audit.history.fractional", `{}`, `{"step":"whole"}`, "2026-04-08T00:00:00Z")
+	fractionalID := insertAuditHistoryRecord(t, a, tenantID, projectID, "u_admin", "requirement", "72", "audit.history.fractional", `{"step":"whole"}`, `{"step":"fractional"}`, "2026-04-08T00:00:00.250Z")
+
+	// 传统 RFC3339 秒级时间和新版 RFC3339Nano 小数秒时间都必须落在所选
+	// 自然日内。此前文本比较会在开始边界漏掉小数秒，并产生错误倒序。
+	w := apiRequest(a, http.MethodGet, "/api/audit-logs?action=audit.history.fractional&from=2026-04-08&to=2026-04-08&limit=1", "u_admin", projectID, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("fractional timestamp query failed: %d %s", w.Code, w.Body.String())
+	}
+	first := jsonMap(t, w)
+	items := auditItems(t, first)
+	if len(items) != 1 || int64(items[0]["id"].(float64)) != fractionalID {
+		t.Fatalf("fractional timestamp was not the newest selected audit event: %#v", items)
+	}
+	cursor, _ := first["nextCursor"].(string)
+	if cursor == "" {
+		t.Fatalf("fractional first page unexpectedly lacks cursor: %#v", first)
+	}
+	w = apiRequest(a, http.MethodGet, "/api/audit-logs?action=audit.history.fractional&from=2026-04-08&to=2026-04-08&limit=1&cursor="+cursor, "u_admin", projectID, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("fractional cursor query failed: %d %s", w.Code, w.Body.String())
+	}
+	next := auditItems(t, jsonMap(t, w))
+	if len(next) != 1 || int64(next[0]["id"].(float64)) != wholeSecondID {
+		t.Fatalf("fractional cursor duplicated or skipped audit records: %#v", next)
+	}
+}

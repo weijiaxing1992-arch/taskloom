@@ -13,6 +13,9 @@ let controller:AbortController|null=null,generation=0,disposed=false
 const validObject=computed(()=>['requirement','defect'].includes(props.objectType)&&Number.isSafeInteger(props.objectId)&&props.objectId>0&&String(props.projectId).trim()!=='')
 const unavailable=computed(()=>busy.value||props.disabled||scope.locked.value||invalidated.value||!validObject.value)
 const progressLabel=computed(()=>activeFormat.value==='pdf'?t('正在生成 PDF…'):activeFormat.value==='json'?t('正在导出 JSON…'):t('正在导出 Markdown…'))
+// 需求导出文件名与页面编号完全一致：固定六位纯数字。超过分配上限的
+// 历史数据不会被截断，避免下载时映射到另一条需求；新建接口已阻止该情况。
+function requirementSerial(id:number){return id>0&&id<=999999?String(id).padStart(6,'0'):String(id)}
 function cancel(){generation++;controller?.abort();controller=null;busy.value=false;opened.value=false}
 function invalidate(){invalidated.value=true;cancel();error.value=''}
 async function exportFile(format:ExportFormat){
@@ -22,12 +25,13 @@ async function exportFile(format:ExportFormat){
   const current=()=>!disposed&&!invalidated.value&&generation===version&&controller===operation&&!operation.signal.aborted&&scope.current()&&id===props.objectId&&type===props.objectType&&project===String(props.projectId)
   try{
     const path=format==='pdf'?`/exports/${type}/${id}.pdf`:`/requirements/${id}/export?format=${format}`
-    const blob=await apiDownload(path,{headers:{'X-DevFlow-Project':project},signal:operation.signal})
+    const blob=await apiDownload(path,{headers:{'X-TaskLoom-Project':project},signal:operation.signal})
     if(!current())return
     const mime=blob.type.split(';')[0]?.trim().toLowerCase(),expected=format==='pdf'?'application/pdf':format==='json'?'application/json':'text/markdown'
     if(mime!==expected||!blob.size)throw new Error(t(format==='pdf'?'PDF 生成失败，请重试':'导出文件格式异常，请重试'))
     // 后端完整快照按原始字节下载，不从列表/编辑草稿重建，不丢弃未知字段或关联内容。
-    const filename=format==='pdf'?`${type==='requirement'?'REQ':'BUG'}-${String(id).padStart(4,'0')}.pdf`:`REQ-${id}-complete.${format==='json'?'json':'md'}`
+    const code=type==='requirement'?requirementSerial(id):`BUG-${String(id).padStart(4,'0')}`
+    const filename=format==='pdf'?`${code}.pdf`:`${code}-complete.${format==='json'?'json':'md'}`
     downloadFile(blob,filename)
   }catch(cause){if(current())error.value=cause instanceof Error?cause.message:t('导出失败，请重试')}
   finally{if(controller===operation){controller=null;busy.value=false}}

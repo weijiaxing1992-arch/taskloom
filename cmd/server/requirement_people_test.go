@@ -269,7 +269,7 @@ func TestConcurrentRequirementMentionSaveNotifiesOnce(t *testing.T) {
 			<-start
 			r := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/requirements/%d", x.ID), strings.NewReader(body))
 			r.Header.Set("Content-Type", "application/json")
-			r.Header.Set("X-DevFlow-Project", projectID)
+			r.Header.Set("X-TaskLoom-Project", projectID)
 			r.AddCookie(cookie)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, r)

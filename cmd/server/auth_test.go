@@ -25,8 +25,8 @@ func loginRequest(a *App, email, password string) (*httptest.ResponseRecorder, *
 func TestProtectedAPIRequiresServerSession(t *testing.T) {
 	a := testApp(t)
 	r := httptest.NewRequest(http.MethodGet, "/api/session", nil)
-	r.Header.Set("X-DevFlow-User", "u_admin")
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-User", "u_admin")
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	w := httptest.NewRecorder()
 	a.scopedAPI().ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
@@ -48,7 +48,7 @@ func TestProtectedAPIRequiresServerSession(t *testing.T) {
 		t.Fatalf("server session did not store only the token digest: raw=%d digest=%d", rawTokenRows, digestRows)
 	}
 	r = httptest.NewRequest(http.MethodGet, "/api/session", nil)
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	r.AddCookie(cookie)
 	w = httptest.NewRecorder()
 	a.scopedAPI().ServeHTTP(w, r)
@@ -78,7 +78,7 @@ func TestLoginRejectsBadPasswordAndLogoutRevokesSession(t *testing.T) {
 	}
 
 	r = httptest.NewRequest(http.MethodGet, "/api/projects", nil)
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	r.AddCookie(cookie)
 	w = httptest.NewRecorder()
 	a.scopedAPI().ServeHTTP(w, r)
@@ -95,7 +95,7 @@ func TestSignedCookieTamperingAndOrganizationSeed(t *testing.T) {
 	}
 	cookie.Value += "tampered"
 	r := httptest.NewRequest(http.MethodGet, "/api/organization/directory", nil)
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	r.AddCookie(cookie)
 	w = httptest.NewRecorder()
 	a.scopedAPI().ServeHTTP(w, r)
@@ -121,7 +121,7 @@ func TestSignedCookieTamperingAndOrganizationSeed(t *testing.T) {
 func TestOrganizationDirectoryRequiresEnterpriseReadPermission(t *testing.T) {
 	a := testApp(t)
 	// u_viewer 可以访问默认项目，但没有企业目录权限；目录不能再通过
-	// X-DevFlow-Project 的普通成员校验而泄露全企业邮箱、工号和部门信息。
+	// X-TaskLoom-Project 的普通成员校验而泄露全企业邮箱、工号和部门信息。
 	w := apiRequest(a, http.MethodGet, "/api/organization/directory", "u_viewer", projectID, "")
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("project member accessed enterprise directory: %d %s", w.Code, w.Body.String())
@@ -147,7 +147,7 @@ func TestPasswordChangeRevokesOtherSessions(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodPost, "/api/profile/password", bytes.NewBufferString(`{"currentPassword":"TaskLoom2026!","newPassword":"Rotated2027!","confirmPassword":"Rotated2027!"}`))
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	r.AddCookie(current)
 	w = httptest.NewRecorder()
 	a.scopedAPI().ServeHTTP(w, r)
@@ -160,7 +160,7 @@ func TestPasswordChangeRevokesOtherSessions(t *testing.T) {
 		status int
 	}{"current": {current, http.StatusOK}, "other": {other, http.StatusUnauthorized}} {
 		r = httptest.NewRequest(http.MethodGet, "/api/session", nil)
-		r.Header.Set("X-DevFlow-Project", projectID)
+		r.Header.Set("X-TaskLoom-Project", projectID)
 		r.AddCookie(testCase.cookie)
 		w = httptest.NewRecorder()
 		a.scopedAPI().ServeHTTP(w, r)

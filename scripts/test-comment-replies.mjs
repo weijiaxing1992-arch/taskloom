@@ -10,6 +10,7 @@ const transpile=source=>ts.transpileModule(source,{compilerOptions:{module:ts.Mo
 function evaluate(source,imports={}){const result={};new Function('require','exports',transpile(source))(id=>imports[id],result);return result}
 const mentions=evaluate(await read('src/mentions.ts')),fields=evaluate(await read('src/requirementFields.ts')),queries=evaluate(await read('src/workItemQuery.ts')),defectPeople=evaluate(await read('src/defectPeople.ts')),replies=evaluate(await read('src/commentReplies.ts'))
 const translations=evaluate(await read('src/locales/enhancements.en.ts')).default
+const notificationDisplay=evaluate(await read('src/notificationDisplay.ts'))
 const flush=async()=>{for(let n=0;n<8;n++){await Promise.resolve();await Vue.nextTick()}}
 const defer=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject}}
 const parent=()=>({id:5,author:'本人',authorUserId:'me',body:'上一级内容',replyToId:3,replyToAuthor:'另一位成员',createdAt:'2026-09-04'})
@@ -26,6 +27,7 @@ async function mount(kind,{handler,resource='test-cases',viewer=false}={}){
  const api=async(path,options={})=>{calls.push({path,options});if(handler){const answer=await handler(path,options);if(answer!==undefined)return answer}if(options.method==='POST'){const body=JSON.parse(options.body),created={...body,id:100+serverComments.length,author:'本人',authorUserId:'me',createdAt:'2026-09-04'};serverComments.unshift(created);return created}if(path==='/session')return identity;if(path.endsWith('/comments'))return{items:structuredClone(serverComments)};if(path==='/requirements/9')return requirement();return{items:[]}}
  const context={locked,project:'test-project',current:()=>!locked.value,request:api}
  const imports={vue:{...Vue,onMounted:callback=>starts.push(callback),onBeforeUnmount:callback=>ends.push(callback)},'vue-router':{useRoute:()=>route,useRouter:()=>({replace:async target=>{updates.push(target);route.query=target.query||{}},push:async target=>updates.push(target)}),onBeforeRouteLeave:callback=>guards.push(callback),onBeforeRouteUpdate:()=>{}},'../api':{api},'../i18n':{t:(value,params={})=>value.replace(/\{(\w+)\}/g,(_,key)=>params[key]??'{'+key+'}'),categoryLabel:value=>value,formatDate:String,locale:Vue.ref('zh-CN')},'../requirementWorkflow':workflow,'../requirementFields':fields,'../workItemQuery':queries,'../mentions':mentions,'../defectPeople':defectPeople,'../layoutScope':{useLayoutBoolean:(_key,fallback)=>Vue.ref(fallback)},'./settingsScope':{useSettingsScope:()=>context},'../components/settingsScope':{useSettingsScope:()=>context}}
+ imports['../notificationDisplay']=notificationDisplay
  const module={}
  new Function('require','exports','window','localStorage',component.code)(id=>imports[id]||(id.endsWith('.vue')?{default:{name:id.split('/').at(-1)}}:undefined),module,window,{getItem:()=> 'test-project'})
  const state=scope.run(()=>module.default.setup(props,{expose:()=>{},emit:(...args)=>events.push(args)}))

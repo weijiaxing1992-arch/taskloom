@@ -1,4 +1,7 @@
 export default {
+  '新增成员默认只读，可展开编辑并多选项目角色。首次登录前也可完成项目授权。': 'New members start with read-only access. Expand the role editor to select multiple roles, even before their first sign-in.',
+  '至少选择一个项目角色': 'Select at least one project role.',
+  '编辑角色': 'Edit roles',
   '管理项目成员': 'Manage project members',
   '管理成员': 'Manage members',
   '仅调整当前项目': 'Changes apply only to this project',

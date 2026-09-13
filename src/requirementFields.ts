@@ -1,7 +1,7 @@
 export type RoleWeightKey = 'frontend' | 'backend' | 'algorithm' | 'ui' | 'product'
 export type RoleWeight = { userId: string; userIds?: string[]; value: number | null }
 export type RoleWeights = Record<RoleWeightKey, RoleWeight>
-export type RequirementMember = { id: string; name: string; email?: string; department?: string; projectRole?: string; role?: string; active?: boolean; isCurrent?: boolean }
+export type RequirementMember = { id: string; name: string; email?: string; department?: string; projectRole?: string; projectRoles?: string[]; role?: string; active?: boolean; isCurrent?: boolean }
 export type RequirementTagOption = { name: string; color?: string; count?: number }
 export type RequirementSprint = { id: number; name: string; status: string }
 

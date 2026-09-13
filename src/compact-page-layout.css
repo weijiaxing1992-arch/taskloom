@@ -173,5 +173,6 @@
   :root body .app-shell .test-owner-filters>.test-filter-mine { min-height:40px; height:40px; font-size:13px; }
   :root body .app-shell .req-viewbar>.req-display-tools { margin-left:0; }
   :root body .app-shell .testing-workspace-head.compact-page-heading { padding:10px 18px; }
-  :root body .app-shell .page-heading-note>p { position:fixed; top:auto; left:16px; margin-top:5px; width:calc(100vw - 32px); }
+  /* 说明浮层必须仍锚定到问号按钮；固定定位会在滚动后脱离触发点并遮挡列表。 */
+  :root body .app-shell .page-heading-note>p { left:auto; right:0; width:min(320px,calc(100vw - 32px)); max-width:calc(100vw - 32px); }
 }

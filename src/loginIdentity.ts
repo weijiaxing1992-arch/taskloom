@@ -4,6 +4,7 @@ export const loginEmailKey = 'devflow-last-email'
 export function normalizeLoginEmail(value: unknown): string {
   if (typeof value !== 'string') return ''
   const email = value.trim().toLowerCase()
+  if (email === 'admin') return 'Admin'
   return email.length <= 254 && /^[^\s@\x00-\x1f]+@[^\s@\x00-\x1f]+\.[^\s@\x00-\x1f]+$/.test(email) ? email : ''
 }
 export function readLoginEmail(storage: LoginEmailStorage | undefined): string {

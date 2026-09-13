@@ -48,6 +48,9 @@ func (a *App) beginAIWrite(r *http.Request) (*sql.Tx, error) {
 	if err == nil {
 		err = a.requireAIGeneration(r.Context(), tx)
 	}
+	if err == nil {
+		err = a.requireAdministrationSession(r.Context(), tx)
+	}
 	if err != nil {
 		tx.Rollback()
 		return nil, err
@@ -76,7 +79,7 @@ func (a *App) requirementAITestCases(w http.ResponseWriter, r *http.Request, id 
 			failAI(w, generationErr)
 			return
 		}
-		write(w, 200, map[string]any{"configured": len(s.Encrypted) > 0, "enabled": s.Enabled, "model": s.Model, "canGenerate": generationErr == nil, "inputFields": []string{"title", "description", "acceptance"}, "maxCases": 10, "focusOptions": aiTestFocusKeys})
+		write(w, 200, map[string]any{"configured": len(s.Encrypted) > 0, "enabled": s.Enabled, "model": s.Model, "baseUrl": s.BaseURL, "canGenerate": generationErr == nil, "inputFields": []string{"title", "description", "acceptance"}, "maxCases": 10, "focusOptions": aiTestFocusKeys})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -84,13 +87,19 @@ func (a *App) requirementAITestCases(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	var input struct {
-		Confirmed            bool     `json:"confirmed"`
-		RequirementUpdatedAt string   `json:"requirementUpdatedAt"`
-		Focus                []string `json:"focus"`
-		ExtraInstructions    string   `json:"extraInstructions"`
-		Count                *int     `json:"count"`
+		Confirmed            bool            `json:"confirmed"`
+		RequirementUpdatedAt string          `json:"requirementUpdatedAt"`
+		Focus                []string        `json:"focus"`
+		ExtraInstructions    string          `json:"extraInstructions"`
+		Count                *int            `json:"count"`
+		ForceNew             json.RawMessage `json:"forceNew"`
 	}
 	if err := decodeOrganizationJSON(w, r, &input); err != nil {
+		failAI(w, err)
+		return
+	}
+	forceNew, err := aiForceNewOption(input.ForceNew)
+	if err != nil {
 		failAI(w, err)
 		return
 	}
@@ -178,7 +187,17 @@ func (a *App) requirementAITestCases(w http.ResponseWriter, r *http.Request, id 
 			_, _ = a.db.ExecContext(ctx, `UPDATE ai_test_case_drafts SET status='failed' WHERE tenant_id=? AND id=? AND status='generating'`, tenantID, draftID)
 		}
 	}()
-	cases, err := a.generateAITestCasesWithOptions(r.Context(), key, s.Model, x, options)
+	cacheKey := a.aiPreviewCacheKey("test-cases", s, version, map[string]any{"requirementId": id, "title": x.Title, "description": x.Description, "acceptance": x.Acceptance, "options": options})
+	cached, reused := "", false
+	if !forceNew {
+		cached, reused = aiPreviews.get(cacheKey)
+	}
+	var cases []aiTestCase
+	if reused {
+		err = json.Unmarshal([]byte(cached), &cases)
+	} else {
+		cases, err = a.generateAITestCasesWithOptions(r.Context(), key, s.Model, s.BaseURL, x, options)
+	}
 	if err != nil {
 		failAI(w, err)
 		return
@@ -199,13 +218,13 @@ func (a *App) requirementAITestCases(w http.ResponseWriter, r *http.Request, id 
 		failAI(w, err)
 		return
 	}
-	if aiVersion(current, currentValues) != version || config.Version != s.Version || !config.Enabled {
+	if aiVersion(current, currentValues) != version || config.Version != s.Version || !config.Enabled || len(config.Encrypted) == 0 {
 		failAI(w, aiStale())
 		return
 	}
 	_, err = tx2.ExecContext(r.Context(), `UPDATE ai_test_case_drafts SET status='ready',cases_json=? WHERE tenant_id=? AND project_id=? AND id=? AND user_id=?`, jsonText(cases), tenantID, a.pid(), draftID, a.uid())
 	if err == nil {
-		err = a.auditRequirementState(r.Context(), tx2, "requirement", "ai_test_cases_generated", id, map[string]any{"draftId": draftID, "count": len(cases), "requestedCount": options.Count, "focus": options.Focus, "model": s.Model})
+		err = a.auditRequirementState(r.Context(), tx2, "requirement", "ai_test_cases_generated", id, map[string]any{"draftId": draftID, "count": len(cases), "requestedCount": options.Count, "focus": options.Focus, "model": s.Model, "reused": reused})
 	}
 	if err == nil {
 		err = tx2.Commit()
@@ -215,7 +234,10 @@ func (a *App) requirementAITestCases(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	ready = true
-	write(w, 201, map[string]any{"draftId": draftID, "requirementId": id, "requirementUpdatedAt": x.UpdatedAt, "expiresAt": expires, "cases": cases})
+	if !reused {
+		aiPreviews.put(cacheKey, jsonText(cases))
+	}
+	write(w, 201, map[string]any{"draftId": draftID, "requirementId": id, "requirementUpdatedAt": x.UpdatedAt, "expiresAt": expires, "cases": cases, "reused": reused})
 }
 
 func (a *App) aiCaseDefaults(tx *sql.Tx) ([]requirementFieldWrite, error) {

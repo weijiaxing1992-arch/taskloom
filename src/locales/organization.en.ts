@@ -1,4 +1,12 @@
 export default {
+ '前往成员编辑':'Edit members',
+ '成员信息已保存':'Member information saved',
+ '保存后自动生成':'Generated when saved',
+ '工号由系统按现有编号规则生成。':'Employee numbers are generated using the existing numbering sequence.',
+ '请为新成员设置独立临时密码，首次登录必须修改。':'Set a unique temporary password for each new member. A password change is required at first sign-in.',
+ '项目角色（可多选）':'Project roles (select multiple)',
+ '成员首次修改密码后可代访问；现在可直接编辑部门和项目角色':'Impersonation is available after the first password change. Departments and project roles can be edited now.',
+ 'departmentCode 填部门代码，projectCode 填项目代号；projectRole 填角色标识，多角色用 | 分隔。可在编辑页查看。':'Use departmentCode for the department code, projectCode for the project code and projectRole for role keys separated by |. Find these in the editor.',
  '按主部门树顺序归类，同部门按姓名排序；无主部门时取所属部门树序首项，未分配部门置后。':'Grouped by primary department in tree order, then sorted by name. Without a primary department, the first membership in tree order is used; unassigned members appear last.',
  '本页 {count} 位成员':'{count} members on this page',
  '查找部门':'Find a department',

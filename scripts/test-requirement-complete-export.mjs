@@ -33,15 +33,15 @@ await test('JSON and Markdown use read-only dedicated routes, exact response byt
   for (const [format, extension, blob] of [['json', 'json', jsonBlob()], ['markdown', 'md', markdownBlob()]]) {
     const m = fixture(async () => blob); await m.exportFile(format)
     assert.equal(m.calls.length, 1); assert.equal(m.calls[0].path, `/requirements/42/export?format=${format}`)
-    assert.equal(m.calls[0].options.headers['X-DevFlow-Project'], 'explicit-project'); assert.equal(m.calls[0].options.method, undefined); assert.equal(m.calls[0].options.body, undefined)
-    assert.equal(m.downloads[0].name, `REQ-42-complete.${extension}`); assert.equal(m.downloads[0].blob, blob); assert.equal(await m.downloads[0].blob.text(), await blob.text())
+    assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'], 'explicit-project'); assert.equal(m.calls[0].options.method, undefined); assert.equal(m.calls[0].options.body, undefined)
+    assert.equal(m.downloads[0].name, `000042-complete.${extension}`); assert.equal(m.downloads[0].blob, blob); assert.equal(await m.downloads[0].blob.text(), await blob.text())
     assert.equal(m.error.value, ''); assert.equal(m.busy.value, false); m.stop()
   }
 })
-await test('PDF retains original requirement and defect endpoints, padded filenames and binary download', async () => {
-  for (const [objectType, prefix] of [['requirement', 'REQ'], ['defect', 'BUG']]) {
+await test('PDF retains original requirement and defect endpoints, with numeric requirement filenames and binary download', async () => {
+  for (const [objectType, prefix] of [['requirement', '000042'], ['defect', 'BUG-0042']]) {
     const blob = pdfBlob(), m = fixture(async () => blob, { objectType }); await m.exportPDF()
-    assert.equal(m.calls[0].path, `/exports/${objectType}/42.pdf`); assert.equal(m.downloads[0].name, `${prefix}-0042.pdf`); assert.equal(m.downloads[0].blob, blob); m.stop()
+    assert.equal(m.calls[0].path, `/exports/${objectType}/42.pdf`); assert.equal(m.downloads[0].name, `${prefix}.pdf`); assert.equal(m.downloads[0].blob, blob); m.stop()
   }
 })
 await test('defects cannot call the new requirement-only formats, and unknown formats or invalid identities cannot issue requests', async () => {
@@ -64,7 +64,7 @@ await test('new export after cancellation remains busy and uncontaminated when t
   const old = deferred(), next = deferred(), m = fixture(path => path.endsWith('json') ? old.promise : next.promise)
   const first = m.exportFile('json'); m.cancel(); const second = m.exportFile('markdown'); old.reject(Error('old request failed')); await first
   assert.equal(m.busy.value, true); assert.equal(m.activeFormat.value, 'markdown'); assert.equal(m.error.value, '')
-  next.resolve(markdownBlob()); await second; assert.equal(m.downloads.length, 1); assert.equal(m.downloads[0].name, 'REQ-42-complete.md'); m.stop()
+  next.resolve(markdownBlob()); await second; assert.equal(m.downloads.length, 1); assert.equal(m.downloads[0].name, '000042-complete.md'); m.stop()
 })
 await test('switching requirement, type, or target project discards old response and old errors', async () => {
   for (const change of [props => props.objectId = 43, props => props.objectType = 'defect', props => props.projectId = 'other-project']) {

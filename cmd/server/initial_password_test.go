@@ -25,7 +25,7 @@ func initialRequest(a *App, cookie *http.Cookie, method, path, body, expected st
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Accept-Language", "en-US")
-	r.Header.Set("X-DevFlow-Expected-User", expected)
+	r.Header.Set("X-TaskLoom-Expected-User", expected)
 	if cookie != nil {
 		r.AddCookie(cookie)
 	}

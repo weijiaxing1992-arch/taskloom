@@ -143,18 +143,18 @@ func (a *App) integrationMetadata(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_query", "项目元数据不接受查询参数")
 		return
 	}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT u.id,u.name,pm.role FROM project_members pm JOIN users u ON u.id=pm.user_id AND u.tenant_id=pm.tenant_id JOIN tenant_memberships tm ON tm.tenant_id=u.tenant_id AND tm.user_id=u.id WHERE pm.tenant_id=? AND pm.project_id=? AND u.active=1 AND tm.status='active' ORDER BY u.name,u.id LIMIT 1001`, tenantID, a.pid())
+	rows, err := a.db.QueryContext(r.Context(), `SELECT u.id,u.name,pm.role,`+projectRolesJSONSQL("pm")+` FROM project_members pm JOIN users u ON u.id=pm.user_id AND u.tenant_id=pm.tenant_id JOIN tenant_memberships tm ON tm.tenant_id=u.tenant_id AND tm.user_id=u.id WHERE pm.tenant_id=? AND pm.project_id=? AND u.active=1 AND tm.status='active' ORDER BY u.name,u.id LIMIT 1001`, tenantID, a.pid())
 	if err != nil {
 		integrationReadError(w, err)
 		return
 	}
-	members := []map[string]string{}
+	members := []map[string]any{}
 	for rows.Next() {
-		var id, name, role string
-		if err = rows.Scan(&id, &name, &role); err != nil {
+		var id, name, role, rawRoles string
+		if err = rows.Scan(&id, &name, &role, &rawRoles); err != nil {
 			break
 		}
-		members = append(members, map[string]string{"id": id, "name": name, "role": role})
+		members = append(members, map[string]any{"id": id, "name": name, "role": role, "projectRoles": decodedProjectRoles(rawRoles, role)})
 	}
 	if err == nil {
 		err = rows.Err()

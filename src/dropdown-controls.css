@@ -1,0 +1,140 @@
+/* Keep the native select and Vue's existing v-model/change contract. Unsupported
+   engines and touch devices keep the existing OS picker. In particular, do not
+   put ::picker in an unguarded selector list: older engines discard that list.
+   ui-contract is declared first by ui-standards.css; its important declarations
+   intentionally take precedence over legacy page and Tailwind control styles. */
+@layer ui-contract {
+  :root {
+    --ui-menu-font-size: var(--ui-font-caption);
+    --ui-menu-item-height: 30px;
+  }
+
+  :is([data-slot="popover-content"], .status-filter-menu, .top-search-popup,
+      .requirement-picker-popover, .mention-popup, .rich-mention-popup, .weight-quick-panel) {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--ui-control-radius) !important;
+    background: var(--popover) !important;
+    color: var(--popover-foreground) !important;
+    box-shadow: none !important;
+    box-sizing: border-box;
+  }
+
+  /* Reka retains anchor placement, available-height limits and edge collision
+     handling. Search/mention rows may wrap: never fix the height of rich rows. */
+  :is(.app-select-menu .app-select-option, .transition-menu .transition-option,
+      .status-filter-options label, .requirement-picker-popover [role="option"],
+      .top-search-popup [role="option"], .mention-popup [role="option"],
+      .rich-mention-popup [role="option"]) {
+    min-height: var(--ui-menu-item-height) !important;
+    height: auto !important;
+    border-radius: 4px !important;
+    padding: 4px 8px !important;
+    font-size: var(--ui-menu-font-size) !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Menu group labels are not page section headings (the global h4 contract is
+     intentionally larger). Keep this exception in the same cascade layer. */
+  .transition-menu .transition-options h4 {
+    font-size: var(--ui-font-caption) !important;
+    line-height: 1.5 !important;
+    font-weight: 500 !important;
+  }
+
+  :is(.app-select-option, .transition-option, .requirement-picker-popover [role="option"],
+      .top-search-popup [role="option"], .mention-popup [role="option"],
+      .rich-mention-popup [role="option"]):is([aria-selected="true"], .selected, .active),
+  .status-filter-options label:has(input:checked),
+  .weight-quick-options button.selected {
+    background: var(--accent) !important;
+    color: var(--accent-foreground) !important;
+  }
+
+  :is(.app-select-option, .transition-option, .requirement-picker-popover [role="option"],
+      .top-search-popup [role="option"], .mention-popup [role="option"],
+      .rich-mention-popup [role="option"]):hover:not(:disabled),
+  .status-filter-options label:hover {
+    background: var(--accent) !important;
+  }
+
+  :is([data-slot="popover-content"], .org-access-list .org-table-wrap):focus-visible,
+  :is(.app-select-menu, .transition-menu, .status-filter-menu, .requirement-picker-popover,
+      .top-search-popup, .mention-popup, .rich-mention-popup) [role="option"]:focus-visible {
+    outline: 2px solid var(--ring) !important;
+    outline-offset: -2px !important;
+  }
+
+  /* Coarse pointers retain generous targets even when the viewport is wide. */
+  @media (max-width: 820px), (pointer: coarse) {
+    :root { --ui-menu-item-height: 40px; --ui-menu-font-size: var(--ui-font-body); }
+  }
+
+  @supports (appearance: base-select) and selector(select::picker(select)) {
+    @media (hover: hover) and (pointer: fine) {
+      select:not([multiple], [size], .rich-document *, .rich-content *),
+      select:not([multiple], [size], .rich-document *, .rich-content *)::picker(select) {
+        -webkit-appearance: base-select !important;
+        appearance: base-select !important;
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *) {
+        background-image: none !important;
+        padding-right: var(--ui-control-padding) !important;
+        gap: 8px;
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *)::picker(select) {
+        border: 1px solid var(--border) !important;
+        border-radius: var(--ui-control-radius) !important;
+        background: var(--popover) !important;
+        color: var(--popover-foreground) !important;
+        box-shadow: none !important;
+        padding: 4px;
+        max-block-size: min(320px, calc(100dvh - 24px));
+        max-inline-size: calc(100vw - 24px);
+        overflow: auto;
+        overscroll-behavior: contain;
+        scroll-padding: 4px;
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *)::picker-icon {
+        color: var(--muted-foreground);
+        margin-inline-start: auto;
+        font-size: 10px;
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *) option {
+        min-block-size: var(--ui-menu-item-height);
+        padding: 4px 8px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+        font-family: inherit;
+        font-size: var(--ui-menu-font-size);
+        line-height: 1.5;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *) option:checked {
+        background: var(--accent);
+        color: var(--accent-foreground);
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *) option:hover:not(:disabled) {
+        background: var(--accent);
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *) option:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: -2px;
+      }
+
+      select:not([multiple], [size], .rich-document *, .rich-content *) option:disabled {
+        color: var(--muted-foreground);
+        opacity: .6;
+      }
+    }
+  }
+}

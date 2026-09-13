@@ -18,6 +18,8 @@ import ProjectNavigation from './components/ProjectNavigation.vue'
 import PageWatermark from './components/PageWatermark.vue'
 import MobileWorkNavigation from './components/MobileWorkNavigation.vue'
 import DesktopNotifications from './components/DesktopNotifications.vue'
+import MobilePreview from './components/MobilePreview.vue'
+import RouteFeedback from './components/RouteFeedback.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -33,10 +35,12 @@ let linkProjectInitialized = false
 let linkProjectResolved = false
 let linkProject = ''
 let unreadRequest = false
+// 本页标记已读/未读后的权威计数优先于更早发出的轮询响应。
+let unreadRevision = 0
 let unreadTimer: ReturnType<typeof setInterval> | undefined
-// 通知由其他成员操作后只能通过服务端读取获知。页面可见时以较短节奏同步，
-// 同时在当前页面产生通知的业务动作完成后立即刷新，避免角标停留在旧数量。
-const unreadRefreshInterval = 3_000
+// 系统通知通道仍保持独立实时检查；角标复用其计数，降低重复后台读取。
+const unreadRefreshInterval = 10_000
+let unreadNextAttempt = 0, unreadFailures = 0, unreadAttemptScope = ''
 let stopThemeClock: (() => void) | undefined
 const topSearch = ref<InstanceType<typeof TopSearch> | null>(null)
 const mobileMenu = ref(false)
@@ -44,8 +48,22 @@ const mobileViewport = ref(false)
 // 仅缓存桌面偏好；手机抽屉始终完整展开，切账号时由 layoutScope 同步恢复各自选择。
 const sidebarCollapsed = useLayoutBoolean('sidebar-collapsed', false)
 const railCollapsed = computed(() => !mobileViewport.value && sidebarCollapsed.value)
+// 管理功能属于低频入口，默认收在一个紧凑分组中；进入任一管理页面时自动展开，
+// 让深链和刷新后的当前位置仍然清楚可见。
+const managementNavigationOpen = ref(false)
+const hasManagementNavigation = computed(() => workspace.canManageProject || workspace.canOpenOrganization || (!!session.value?.project?.id && !session.value.impersonation))
+const isManagementRoute = computed(() => route.path === '/audit' || route.path.startsWith('/organization') || route.path === '/settings/ai' || route.path === '/settings/integrations' || route.path === '/settings/fields')
+function onManagementNavigationToggle(event: Event) {
+  const opened = (event.currentTarget as HTMLDetailsElement).open
+  managementNavigationOpen.value = opened
+  // 收起侧栏时先恢复正常宽度，再显示子入口；避免只出现一列无语义的图标。
+  if (opened && railCollapsed.value) sidebarCollapsed.value = false
+}
+watch(isManagementRoute, active => { if (active) managementNavigationOpen.value = true }, { immediate: true })
 const mobileRail = ref<HTMLElement|null>(null)
 const mobileTrigger = ref<HTMLButtonElement|null>(null)
+const workspaceContent = ref<HTMLElement|null>(null)
+function focusWorkspaceContent() { workspaceContent.value?.focus({ preventScroll: true }) }
 let mobileQuery:MediaQueryList|undefined
 function syncMobile(){mobileViewport.value=!!mobileQuery?.matches;if(!mobileViewport.value)mobileMenu.value=false}
 function mobileNavigationKeys(event:KeyboardEvent){
@@ -63,16 +81,20 @@ onBeforeUnmount(()=>mobileQuery?.removeEventListener('change',syncMobile))
 const roleNames: Record<string, string> = { tenant_admin: '企业管理员', project_admin: '项目管理员', product: '产品', frontend: '前端', backend: '后端', algorithm: '算法', ui: 'UI 设计', frontend_lead: '前端组长', backend_lead: '后端组长', qa: '测试', viewer: '只读' }
 const roleLabel = computed(() => t(roleNames[session.value?.user.role || ''] || '团队成员'))
 const avatarStyle = computed(() => ({ background: session.value?.user.avatarColor || '#665FE8' }))
+// 待首次改密成员只能由企业管理员进行受限代看。后端已拒绝每个写请求，
+// 此处持续标明状态，避免管理员把查看模式误认为正常可操作的成员会话。
+const impersonationReadOnly = computed(() => session.value?.impersonation?.readOnly === true)
 
 async function load() {
   // 会话先验证，其他工作区数据再并行读取；仅同一版本的完整结果可以替换当前上下文。
   if (isPublicRoute.value) return false
   if (!linkProjectInitialized) { linkProjectInitialized=true; linkProject=typeof route.query.project==='string' ? route.query.project : '' }
   const version = ++loadVersion
+  const unreadLoadRevision = unreadRevision
   authRefreshing.value = true
   if (!session.value) authChecking.value = true
   async function fetchContext(explicitProject?: string) {
-    const options = explicitProject ? { headers: { 'X-DevFlow-Project': explicitProject } } : undefined
+    const options = explicitProject ? { headers: { 'X-TaskLoom-Project': explicitProject } } : undefined
     const verifiedSession = await api<any>('/session', options)
     if (version !== loadVersion || isPublicRoute.value) throw new Error('Workspace load superseded')
     // 初始改密阶段只取最小会话，业务列表/个人偏好接口应由后端强制拒绝，不要并行预读。
@@ -118,7 +140,9 @@ async function load() {
     }
     if (!context.verifiedSession.user?.mustChangePassword) linkProjectResolved=true
     applyLayoutScope(context.verifiedSession.tenant?.id, context.verifiedSession.user?.id)
-    workspace.acceptContext({ session: context.verifiedSession, projects: context.projects, unread: context.unread })
+    // 资料刷新也会并行读取角标；同一身份期间的已读操作不能被旧快照覆盖。
+    const preserveUnread = unreadLoadRevision !== unreadRevision && session.value?.user.id === context.verifiedSession.user?.id && session.value?.project?.id === context.verifiedSession.project?.id && !context.verifiedSession.user?.operationDisabled && !context.verifiedSession.user?.mustChangePassword
+    workspace.acceptContext({ session: context.verifiedSession, projects: context.projects, unread: preserveUnread ? workspace.unread : context.unread })
     applyLanguagePreferences(context.verifiedSession.user)
     applyDisplayPreferences(context.display)
     applyThemePreferences(context.display)
@@ -185,7 +209,7 @@ async function switchProject() {
     // 从这里起，旧项目上下文中的异步角标响应均已过期。项目选择只有在服务端
     // 确认当前用户仍可访问目标项目之后才写入本地缓存，不能用待确认的下拉值做 API 默认作用域。
     projectContextVersion++
-    await api(`/projects/${nextProject}/visit`, { method: 'POST', headers: { 'X-DevFlow-Project': nextProject } })
+    await api(`/projects/${nextProject}/visit`, { method: 'POST', headers: { 'X-TaskLoom-Project': nextProject } })
     localStorage.setItem('devflow-project', nextProject)
     if (['/projects', '/my-work', '/search', '/notifications', '/profile'].includes(route.path)) {
       if (!(await load())) throw new Error(authError.value || t('暂时无法载入项目，请重试'))
@@ -203,9 +227,23 @@ async function switchProject() {
   }
 }
 function shortcuts(event: KeyboardEvent) { if (!isPublicRoute.value && !workspace.operationDisabled && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); void topSearch.value?.focus() } }
-function unreadChanged(event: Event) { if (!isPublicRoute.value) workspace.setUnread((event as CustomEvent).detail) }
+function unreadChanged(event: Event) {
+  if (isPublicRoute.value || !session.value || workspace.operationDisabled || identityConflict.value) return
+  unreadRevision++
+  workspace.setUnread((event as CustomEvent).detail)
+  unreadFailures = 0
+  unreadNextAttempt = Date.now() + unreadRefreshInterval
+}
 function profileChanged() { if (!isPublicRoute.value) void load() }
-function authExpired() { loadVersion++; clearLayoutScope(); applyThemePreferences({themeMode:'light'}); workspace.clearSession() }
+function authExpired(event?:Event) {
+  loadVersion++; clearLayoutScope(); applyThemePreferences({themeMode:'light'}); workspace.clearSession()
+  // A request sent with an old cookie can fail after another tab refreshed
+  // this account's session. Recheck once, without replaying the failed write.
+  // A /session rejection is final; otherwise a genuinely expired cookie
+  // would cause an infinite restore loop. Explicit sign-out/reset stays final.
+  const path=(event as CustomEvent<{path?:string}>|undefined)?.detail?.path
+  if(path&&path!=='/session'&&!isPublicRoute.value){authChecking.value=true;void load()}
+}
 function initialPasswordRequired(event: Event) {
   if (identityConflict.value || (session.value && (event as CustomEvent).detail?.userId !== session.value.user.id)) return
   loadVersion++; clearLayoutScope(); mobileMenu.value = false
@@ -222,16 +260,26 @@ function accountDisabled() {
 function identityChanged(event:Event){loadVersion++;clearLayoutScope();const expired=(event as CustomEvent).detail==='impersonation_expired';workspace.markIdentityConflict(expired,t(expired?'代访问已失效，请返回管理员账号':'账号身份已在其他页面切换，请刷新后继续'))}
 async function stopImpersonation(){if(returning.value)return;returning.value=true;try{const data=await api<any>('/auth/impersonation/stop',{method:'POST',body:'{}'});clearLayoutScope();localStorage.setItem('devflow-project',data.projectId||'prj_orbit');location.href='/members'}catch(cause){authError.value=cause instanceof Error?cause.message:t('操作失败，请稍后重试')}finally{returning.value=false}}
 function reloadIdentity(){location.reload()}
-async function refreshUnread() {
+async function refreshUnread(event?: Event) {
   // 切换过程的 project 是下拉框中尚未验证的候选值；此时不得向候选项目读取未读数。
   if (isPublicRoute.value || workspace.operationDisabled || workspace.mustChangePassword || identityConflict.value || switchingProject.value || document.visibilityState === 'hidden' || !session.value || !session.value.project?.id || unreadRequest || authRefreshing.value) return
-  const version = loadVersion, contextVersion = projectContextVersion, userID = session.value.user.id, projectID = session.value.project.id
+  const version = loadVersion, contextVersion = projectContextVersion, revision = unreadRevision, userID = session.value.user.id, projectID = session.value.project.id
+  const scope = `${version}:${contextVersion}:${userID}:${projectID}`
+  if (scope !== unreadAttemptScope) { unreadAttemptScope = scope; unreadNextAttempt = 0; unreadFailures = 0 }
+  // 本页业务写入后主动失效；焦点与可见性事件合并，失败时最多退避一分钟。
+  if (event?.type !== 'devflow-notifications-changed' && Date.now() < unreadNextAttempt) return
+  unreadNextAttempt = Date.now() + 1_000
   unreadRequest = true
   try {
     // 显式携带已验证项目，而不是依赖 localStorage 中可能被切换器修改的默认请求头。
-    const data = await api<any>('/notifications/unread-count', { headers: { 'X-DevFlow-Project': projectID } })
-    if (version === loadVersion && contextVersion === projectContextVersion && session.value?.user.id === userID && session.value?.project?.id === projectID && !switchingProject.value && !isPublicRoute.value) workspace.setUnread(data.unread)
-  } catch { /* Keep the last known badge on transient failures; API handles expired sessions. */ }
+    const data = await api<any>('/notifications/unread-count', { headers: { 'X-TaskLoom-Project': projectID } })
+    if (revision === unreadRevision && version === loadVersion && contextVersion === projectContextVersion && session.value?.user.id === userID && session.value?.project?.id === projectID && !switchingProject.value && !isPublicRoute.value) {
+      workspace.setUnread(data.unread); unreadFailures = 0; unreadNextAttempt = Date.now() + unreadRefreshInterval
+    }
+  } catch {
+    if (scope === unreadAttemptScope) { unreadFailures++; unreadNextAttempt = Date.now() + Math.min(60_000, unreadRefreshInterval * 2 ** Math.min(unreadFailures, 3)) }
+    // Keep the last known badge on transient failures; API handles expired sessions.
+  }
   finally { unreadRequest = false }
 }
 
@@ -252,12 +300,13 @@ onBeforeUnmount(() => window.removeEventListener('devflow-project-list-changed',
   <Login v-else-if="!session" :notice="loginNotice" @authenticated="load" />
   <section v-else-if="workspace.operationDisabled" class="account-disabled" role="alert"><div><span class="disabled-symbol">⊘</span><h1>{{t('账户已禁用')}}</h1><p>{{session.user.name}} · {{session.tenant.name}}</p><p>{{t('您可以登录，但当前无法访问或操作业务数据。请联系管理员重新启用账户。')}}</p><p v-if="authError">{{authError}}</p><div class="disabled-actions"><Button variant="outline" :disabled="authRefreshing" @click="load">{{t('检查启用状态')}}</Button><Button @click="logout">{{t('退出登录')}}</Button></div></div></section>
   <InitialPasswordChange v-else-if="workspace.mustChangePassword" :key="session.tenant.id+':'+session.user.id" :user="session.user" :blocked="identityConflict" :block-reason="authError" :impersonated="!!session.impersonation" :returning="returning" @return-administrator="stopImpersonation" @refresh="reloadIdentity" @completed="passwordChangeComplete" @logout="logout" />
-  <div v-else :class="['app-shell', { viewer: session.user.role === 'viewer', impersonating: !!session.impersonation }]">
+  <div v-else :class="['app-shell', { viewer: session.user.role === 'viewer', impersonating: !!session.impersonation, 'impersonating-readonly': impersonationReadOnly }]">
+    <a v-if="!identityConflict&&!mobileMenu" class="workspace-skip-link" href="#workspace-content" @click.prevent="focusWorkspaceContent">{{t('跳到页面内容')}}</a>
     <button v-if="mobileMenu" class="mobile-nav-backdrop" :aria-label="t('关闭导航')" @click="mobileMenu=false"></button>
     <aside id="primary-navigation" ref="mobileRail" class="rail" :class="{'mobile-open':mobileMenu,'rail-collapsed':railCollapsed}" :inert="mobileViewport&&!mobileMenu" :role="mobileMenu?'dialog':undefined" :aria-modal="mobileMenu||undefined" :aria-label="t('主导航')" @keydown="mobileNavigationKeys">
       <button class="mobile-nav-close" :aria-label="t('关闭导航')" @click="mobileMenu=false">×</button>
-      <router-link class="brand brand-home" to="/" :aria-label="t('返回首页')" :title="t('返回首页')" @click="mobileMenu=false"><span class="brand-mark">D</span><div><strong>TaskLoom</strong><small>{{ t('星河示例企业研发协作') }}</small></div></router-link>
-      <div class="tenant"><span class="avatar">{{ t('蝠') }}</span><div><b>{{ session?.tenant.name || '星河示例企业' }}</b><small>{{ t('企业工作台') }}</small></div></div>
+      <router-link class="brand brand-home" to="/" :aria-label="t('返回首页')" :title="t('返回首页')" @click="mobileMenu=false"><span class="brand-mark" aria-hidden="true">D</span><div><strong>TaskLoom</strong><small>{{ t('星河示例企业研发协作') }}</small></div></router-link>
+      <div class="tenant"><span class="avatar">{{ t('织') }}</span><div><b>{{ session?.tenant.name || '星河示例企业' }}</b><small>{{ t('企业工作台') }}</small></div></div>
       <button type="button" class="sidebar-collapse-toggle" aria-controls="primary-navigation" :aria-expanded="!railCollapsed" :aria-label="t(railCollapsed?'展开侧边栏':'收起侧边栏')" :title="t(railCollapsed?'展开侧边栏':'收起侧边栏')" @click="sidebarCollapsed=!sidebarCollapsed"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18v16H3zM8 4v16"/><path :d="railCollapsed?'m12 9 3 3-3 3':'m16 9-3 3 3 3'"/></svg><span class="sidebar-toggle-label">{{t(railCollapsed?'展开侧边栏':'收起侧边栏')}}</span></button>
       <nav class="global-nav" :aria-label="t('工作台导航')">
         <p class="nav-section-label">{{ t('工作台') }}</p>
@@ -265,40 +314,55 @@ onBeforeUnmount(() => window.removeEventListener('devflow-project-list-changed',
         <router-link to="/my-work" :title="t('我的工作')" :aria-label="t('我的工作')"><Icon name="work"/><span class="rail-link-label">{{ t('我的工作') }}</span></router-link>
         <router-link to="/search" :title="t('全局搜索')" :aria-label="t('全局搜索')"><Icon name="search"/><span class="rail-link-label">{{ t('全局搜索') }}</span><kbd>⌘K</kbd></router-link>
         <router-link to="/notifications" :title="t('通知中心')" :aria-label="t('通知中心')+(unread?' · '+unread:'')"><Icon name="bell"/><span class="rail-link-label">{{ t('通知中心') }}</span><em v-if="unread" class="number-badge">{{ unread > 99 ? '99+' : unread }}</em></router-link>
-        <p v-if="workspace.canViewReports" class="nav-section-label nav-section-spaced">{{ t('团队洞察') }}</p>
-        <router-link v-if="workspace.canViewReports" to="/reports/workload" :title="t('工作量统计')" :aria-label="t('工作量统计')"><Icon name="chart"/><span class="rail-link-label">{{t('工作量统计')}}</span></router-link>
+        <p v-if="workspace.canAccessWorkload||workspace.canViewReports" class="nav-section-label nav-section-spaced">{{ t('团队洞察') }}</p>
+        <router-link v-if="workspace.canAccessWorkload" to="/reports/workload" :title="t('工作量统计')" :aria-label="t('工作量统计')"><Icon name="chart"/><span class="rail-link-label">{{t('工作量统计')}}</span></router-link>
+        <router-link v-if="workspace.canViewReports" to="/reports/release-notes" :title="t('升级日志')" :aria-label="t('升级日志')"><Icon name="review"/><span class="rail-link-label">{{t('升级日志')}}</span></router-link>
       </nav>
       <div class="rail-bottom">
         <p class="brand-slogan">{{t('努力只能及格，拼命Vibe才能优秀！')}}</p>
-        <p v-if="workspace.canManageProject || workspace.canOpenOrganization || (session.project?.id&&!session.impersonation)" class="nav-section-label">{{ t('管理与配置') }}</p>
-        <router-link v-if="workspace.canManageProject" to="/settings/fields" :title="t('项目设置')" :aria-label="t('项目设置')"><Icon name="fields"/><span class="rail-link-label">{{ t('项目设置') }}</span></router-link>
-        <router-link v-if="workspace.canManageProject" to="/settings/fields?tab=automation" :title="t('自动化规则')" :aria-label="t('自动化规则')"><Icon name="settings"/><span class="rail-link-label">{{ t('自动化规则') }}</span></router-link>
-        <router-link v-if="workspace.canManageProject" to="/audit" :title="t('变更历史')" :aria-label="t('变更历史')"><Icon name="review"/><span class="rail-link-label">{{ t('变更历史') }}</span></router-link>
-        <router-link v-if="workspace.canOpenOrganization" to="/organization" :title="t('企业管理')" :aria-label="t('企业管理')"><Icon name="settings"/><span class="rail-link-label">{{ t('企业管理') }}</span></router-link>
-        <router-link v-if="workspace.canManageOrganization&&!session.impersonation" to="/settings/ai" :title="t('AI 服务配置')" :aria-label="t('AI 服务配置')"><Icon name="settings"/><span class="rail-link-label">{{t('AI 服务配置')}}</span></router-link>
-        <router-link v-if="session.project?.id&&!session.impersonation" to="/settings/integrations" :title="t('API 与 AI 集成')" :aria-label="t('API 与 AI 集成')"><Icon name="settings"/><span class="rail-link-label">{{ t('API 与 AI 集成') }}</span></router-link>
+        <details v-if="hasManagementNavigation" class="management-nav" :open="managementNavigationOpen" @toggle="onManagementNavigationToggle">
+          <summary :aria-label="t('管理中心')" :title="t('管理中心')">
+            <Icon name="settings"/>
+            <span class="rail-link-label">{{ t('管理中心') }}</span>
+            <span class="management-nav-chevron" aria-hidden="true">⌄</span>
+          </summary>
+          <nav class="management-nav-links" :aria-label="t('管理中心')">
+            <router-link v-if="workspace.canManageProject" to="/settings/fields" active-class="" :class="{'management-link-active':route.path==='/settings/fields'&&route.query.tab!=='automation'}" :title="t('项目设置')" :aria-label="t('项目设置')"><Icon name="fields"/><span class="rail-link-label">{{ t('项目设置') }}</span></router-link>
+            <router-link v-if="workspace.canManageProject" to="/settings/fields?tab=automation" active-class="" :class="{'management-link-active':route.path==='/settings/fields'&&route.query.tab==='automation'}" :title="t('自动化规则')" :aria-label="t('自动化规则')"><Icon name="settings"/><span class="rail-link-label">{{ t('自动化规则') }}</span></router-link>
+            <router-link v-if="workspace.canManageProject" to="/audit" active-class="" :class="{'management-link-active':route.path==='/audit'}" :title="t('变更历史')" :aria-label="t('变更历史')"><Icon name="review"/><span class="rail-link-label">{{ t('变更历史') }}</span></router-link>
+            <router-link v-if="workspace.canOpenOrganization" to="/organization" active-class="" :class="{'management-link-active':route.path==='/organization'||route.path.startsWith('/organization/')}" :title="t('企业管理')" :aria-label="t('企业管理')"><Icon name="settings"/><span class="rail-link-label">{{ t('企业管理') }}</span></router-link>
+            <router-link v-if="workspace.canManageOrganization&&!session.impersonation" to="/settings/ai" active-class="" :class="{'management-link-active':route.path==='/settings/ai'}" :title="t('AI 服务配置')" :aria-label="t('AI 服务配置')"><Icon name="settings"/><span class="rail-link-label">{{t('AI 服务配置')}}</span></router-link>
+            <router-link v-if="session.project?.id&&!session.impersonation" to="/settings/integrations" active-class="" :class="{'management-link-active':route.path==='/settings/integrations'}" :title="t('API 与 AI 集成')" :aria-label="t('API 与 AI 集成')"><Icon name="settings"/><span class="rail-link-label">{{ t('API 与 AI 集成') }}</span></router-link>
+          </nav>
+        </details>
         <router-link class="current-user" to="/profile" :aria-label="t('打开个人信息')" :title="(session?.user.name||'')+' · '+roleLabel"><span class="avatar small" :style="avatarStyle">{{ session?.user.name?.slice(0, 1) || '林' }}</span><div><b>{{ session?.user.name || '林夏' }}</b><small>{{ roleLabel }}</small></div><span class="profile-chevron">›</span></router-link>
 		<Button variant="ghost" size="sm" class="rail-logout mt-2 w-full justify-start" :title="t('退出登录')" :aria-label="t('退出登录')" @click="logout"><svg class="rail-logout-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4"/></svg><span class="rail-link-label">{{ t('退出登录') }}</span></Button>
       </div>
     </aside>
-    <section class="workspace" :class="{'mobile-work-hub':['/my-work','/search','/notifications','/projects'].includes(route.path)}" :inert="mobileViewport&&mobileMenu">
+    <section class="workspace" :class="{'mobile-work-hub':['/my-work','/requirements','/iterations','/notifications'].includes(route.path)}" :inert="mobileViewport&&mobileMenu">
       <DesktopNotifications :key="session.tenant.id+':'+session.user.id" runtime-only />
-      <div v-if="session.impersonation" class="impersonation-banner" role="status"><div><b>{{t('正在代访问：{name}',{name:session.user.name})}}</b><span>{{t('管理员 {name} · 操作全程审计 · 最长 30 分钟',{name:session.impersonation.adminName})}}</span></div><button class="btn compact" :disabled="returning" @click="stopImpersonation">{{t('返回管理员')}}</button></div>
+      <div v-if="session.impersonation" class="impersonation-banner" :class="{'impersonation-readonly':impersonationReadOnly}" role="status"><div><b>{{t(impersonationReadOnly?'正在受限代看：{name}':'正在代访问：{name}',{name:session.user.name})}}</b><span>{{t(impersonationReadOnly?'待首次改密账号 · 仅查看 · 所有修改均已锁定 · 操作全程审计':'管理员 {name} · 操作全程审计 · 最长 30 分钟',{name:session.impersonation.adminName})}}</span></div><button class="btn compact" :disabled="returning" @click="stopImpersonation">{{t('返回管理员')}}</button></div>
       <header class="topbar">
         <div class="topbar-leading">
           <button ref="mobileTrigger" class="mobile-nav-trigger" :aria-label="t('打开导航')" :aria-expanded="mobileMenu" @click="mobileMenu=!mobileMenu"><Icon name="menu"/></button>
-          <div class="project-switcher"><span class="project-icon">{{ session?.project.name?.slice(0, 1) || '项' }}</span><select v-model="project" :aria-label="t('切换当前项目')" :disabled="switchingProject" @change="switchProject"><option v-for="x in projects.filter(x => x.status === 'active')" :key="x.id" :value="x.id">{{ x.name }} · {{ x.code }}</option></select></div>
+          <div class="project-switcher"><span class="project-icon">{{ session?.project.name?.slice(0, 1) || '项' }}</span><select v-model="project" class="project-select" :aria-label="t('切换当前项目')" :title="[session?.project?.name, session?.project?.code].filter(Boolean).join(' · ')" :disabled="switchingProject" @change="switchProject"><option v-for="x in projects.filter(x => x.status === 'active')" :key="x.id" :value="x.id">{{ x.name }} · {{ x.code }}</option></select></div>
         </div>
         <TopSearch ref="topSearch" :disabled="identityConflict||switchingProject"/>
-        <div class="top-actions"><LocaleSwitcher authenticated /><router-link class="plain-icon help-entry" to="/help" :aria-label="t('帮助')" :title="t('帮助')"><Icon name="help"/></router-link><router-link class="icon-link" to="/notifications" :aria-label="t('通知中心')+(unread?' · '+(unread>99?'99+':unread):'')"><Icon name="bell" :size="18"/><em v-if="unread" class="notification-badge">{{ unread > 99 ? '99+' : unread }}</em></router-link><router-link class="avatar small avatar-link" :style="avatarStyle" to="/profile" :aria-label="t('打开个人信息')">{{ session?.user.name?.slice(0, 1) || '林' }}</router-link></div>
+        <div class="top-actions"><LocaleSwitcher authenticated /><MobilePreview v-if="workspace.canManageOrganization&&!session.impersonation"/><router-link class="plain-icon help-entry" to="/help" :aria-label="t('帮助')" :title="t('帮助')"><Icon name="help"/></router-link><router-link class="icon-link" to="/notifications" :aria-label="t('通知中心')+(unread?' · '+(unread>99?'99+':unread):'')"><Icon name="bell" :size="18"/><em v-if="unread" class="notification-badge">{{ unread > 99 ? '99+' : unread }}</em></router-link><router-link class="avatar small avatar-link" :style="avatarStyle" to="/profile" :aria-label="t('打开个人信息')">{{ session?.user.name?.slice(0, 1) || '林' }}</router-link></div>
       </header>
       <ProjectNavigation />
       <div v-if="projectError" class="readonly-banner" role="alert">{{ projectError }}</div>
       <div v-if="authError" class="service-retry-banner" role="alert"><div><b>{{ t('服务暂时不可用，已保留当前登录和工作空间') }}</b><span>{{ authError }}</span></div><button class="btn compact" :disabled="authRefreshing" @click="load">{{ t(authRefreshing ? '正在重试…' : '重试连接') }}</button></div>
       <div v-if="session?.user.role === 'viewer'" class="readonly-banner">{{ t('只读身份：可以浏览、搜索和处理自己的通知，业务写操作由后端强制拦截。') }}</div>
       <div v-if="identityConflict" class="readonly-banner" role="alert">{{authError}} <button class="btn compact" @click="impersonationRecovery?stopImpersonation():reloadIdentity()">{{t(impersonationRecovery?'返回管理员':'刷新')}}</button></div>
-      <main :inert="identityConflict"><router-view /></main>
-      <MobileWorkNavigation v-if="['/my-work','/search','/notifications','/projects'].includes(route.path)&&!identityConflict" :unread="unread" />
+      <RouteFeedback v-if="!identityConflict" />
+      <main id="workspace-content" ref="workspaceContent" tabindex="-1" :inert="identityConflict"><router-view /></main>
+      <!--
+        为需要覆盖全工作区的业务抽屉提供统一宿主。main 需要独立滚动且路由根节点带入场动画，
+        把 fixed 遮罩留在其中会形成错误的定位/裁剪上下文，导致顶部栏穿透遮罩。
+      -->
+      <div id="workspace-overlays" class="workspace-overlay-host"></div>
+      <MobileWorkNavigation v-if="['/my-work','/requirements','/iterations','/notifications'].includes(route.path)&&!identityConflict" :unread="unread" />
     </section>
     <PageWatermark />
   </div>
@@ -306,10 +370,11 @@ onBeforeUnmount(() => window.removeEventListener('devflow-project-list-changed',
 
 <style scoped>
 .mobile-nav-trigger,.mobile-nav-close,.mobile-nav-backdrop{display:none}
+.workspace-skip-link{position:fixed;top:8px;left:50%;z-index:2200;transform:translate(-50%,-180%);padding:10px 16px;border-radius:8px;background:var(--surface);border:2px solid var(--primary);color:var(--primary);text-decoration:none}.workspace-skip-link:focus{transform:translate(-50%,0)}#workspace-content:focus{outline:none}
 @media(max-width:1024px){.mobile-nav-trigger{display:grid;place-items:center;flex:none;width:44px;height:44px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}.mobile-nav-close{display:block;position:absolute;right:10px;top:10px;width:40px;height:40px;border:0;border-radius:8px;background:#ffffff15;color:white;font-size:22px}.mobile-nav-backdrop{display:block;position:fixed;inset:0;z-index:399;border:0;background:#09122499}.rail{display:flex!important;position:fixed;inset:0 auto 0 0;width:260px!important;z-index:400;transform:translateX(-100%);transition:transform .2s ease}.rail.mobile-open{transform:translateX(0)}.brand{margin-top:20px}}
 .brand-home{text-decoration:none}.brand-home:focus-visible{outline:2px solid var(--ring);outline-offset:3px;border-radius:var(--radius)}.brand-slogan{margin:12px 10px 18px;padding-left:10px;border-left:2px solid #9f9bff;color:#cbd5e1;font-size:11px;line-height:1.9;letter-spacing:.25px}.brand-slogan span{margin:0 2px;color:#c4b5fd;font-weight:700}
 .account-disabled{min-height:100dvh;display:grid;place-items:center;background:var(--page-bg,#f5f6fa);color:var(--text-primary,#243247);padding:24px}.account-disabled>div{max-width:520px;text-align:center;border:1px solid var(--border-color,#dce2ec);border-radius:18px;padding:36px;background:var(--surface,#fff)}.account-disabled p{color:var(--text-secondary,#667085);line-height:1.8}.disabled-symbol{font-size:36px;color:#dc6858}.disabled-actions{display:flex;gap:12px;justify-content:center;margin-top:24px}
-.impersonation-banner{position:relative;z-index:100;flex:none;height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 24px;background:#fff5dc;border-bottom:1px solid #f6da93;color:#89520d}.impersonation-banner>div{display:grid;gap:4px}.impersonation-banner b{font-size:13px}.impersonation-banner span{font-size:11px}.impersonation-banner button{flex:none;border-color:#e4c788;color:#89520d}
+.impersonation-banner{position:relative;z-index:100;flex:none;height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 24px;background:#fff5dc;border-bottom:1px solid #f6da93;color:#89520d}.impersonation-banner>div{display:grid;gap:4px;min-width:0}.impersonation-banner b{font-size:13px}.impersonation-banner span{font-size:11px}.impersonation-banner button{flex:none;border-color:#e4c788;color:#89520d}.impersonation-banner.impersonation-readonly{background:#fff8e8;border-bottom-color:#f1d184;color:#7a510a}.impersonation-banner.impersonation-readonly button{border-color:#dcb76e;color:#7a510a}
 :global(.app-shell.impersonating .drawer-shade),:global(.app-shell.impersonating .modal-shade){top:64px}
 .help-entry{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--muted-foreground)}.help-entry:hover{color:var(--primary)}
 .auth-retry-card{width:min(440px,calc(100vw - 40px));padding:32px;border:1px solid #e4e7ec;border-radius:12px;background:#fff;text-align:center}.auth-retry-icon{display:grid;place-items:center;width:38px;height:38px;margin:0 auto 16px;border-radius:11px;background:#fff3df;color:#b7791f;font-size:22px;font-weight:650}.auth-retry-card h1{margin:0 0 12px;font-size:20px;color:#344054}.auth-retry-card p{margin:0 0 10px;color:#667085;font-size:12px;line-height:1.7}.auth-retry-card small{display:block;color:#98a2b3;font-size:11px;line-height:1.7}.auth-retry-card>.btn{margin-top:22px}.service-retry-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 24px;background:#fffaeb;border-bottom:1px solid #f5dfad;color:#986214}.service-retry-banner>div{display:grid;gap:3px}.service-retry-banner b{font-size:11px;font-weight:550}.service-retry-banner span{font-size:10px;color:#a87530}.service-retry-banner .btn{flex:none}

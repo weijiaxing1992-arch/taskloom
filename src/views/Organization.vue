@@ -10,6 +10,7 @@ import OrganizationDirectory from '../components/OrganizationDirectory.vue'
 import ServerMonitor from '../components/ServerMonitor.vue'
 import DeliveryCenter from '../components/DeliveryCenter.vue'
 import WechatSettings from '../components/WechatSettings.vue'
+import WecomCustomAppSettings from '../components/WecomCustomAppSettings.vue'
 import SidebarCollapseButton from '../components/SidebarCollapseButton.vue'
 import { useLayoutBoolean } from '../layoutScope'
 import OrganizationInvitations from '../components/OrganizationInvitations.vue'
@@ -17,7 +18,7 @@ import '../organization.css'
 const route=useRoute(),router=useRouter(),scope=useSettingsScope(),context=ref<OrganizationContext|null>(null),error=ref(''),loading=ref(true)
 const organizationSidebarExpanded=useLayoutBoolean('organization.sidebar',true)
 const section=computed(()=>organizationSections.some(item=>item.key===route.params.section)?String(route.params.section):'overview')
-const visibleSections=computed(()=>organizationSections.filter(item=>!['groups','server-monitor','delivery','wechat-login'].includes(item.key)||context.value?.isTenantAdmin).filter(item=>item.key!=='invitations'||permits(context.value,'invitations.manage')).filter(item=>item.key!=='applications'||permits(context.value,'applications.review')))
+const visibleSections=computed(()=>organizationSections.filter(item=>!['groups','server-monitor','delivery','wechat-login','wecom-app'].includes(item.key)||context.value?.isTenantAdmin).filter(item=>item.key!=='invitations'||permits(context.value,'invitations.manage')).filter(item=>item.key!=='applications'||permits(context.value,'applications.review')))
 async function load(){loading.value=true;error.value='';try{context.value=await scope.request<OrganizationContext>('/organization/admin')}catch(cause){error.value=cause instanceof Error?cause.message:'无法加载企业管理'}finally{loading.value=false}}
 function navigate(key:string){void router.push(key==='archived-projects'?'/projects?status=archived':'/organization/'+key)}
 const cards=computed(()=>context.value?[
@@ -32,7 +33,7 @@ onMounted(load)
 <template>
   <div class="organization-page">
     <aside class="org-nav" :class="{'is-collapsed':!organizationSidebarExpanded}"><SidebarCollapseButton :expanded="organizationSidebarExpanded" :label="t('企业管理侧边栏')" @toggle="organizationSidebarExpanded=!organizationSidebarExpanded"/><div v-show="organizationSidebarExpanded" class="org-nav-content"><div class="org-brand"><span>D</span><h2>{{context?.organization.name||t('企业管理')}}</h2><small>{{t('组织与权限中心')}}</small></div><nav :aria-label="t('企业管理')"><RouterLink v-for="item in visibleSections" :key="item.key" :to="'/organization/'+item.key" :class="{active:section===item.key}" @dblclick="navigate(item.key)"><i aria-hidden="true">{{item.icon}}</i>{{t(item.name)}}<small v-if="item.key==='applications'&&context?.counts.pendingApplications">{{context.counts.pendingApplications}}</small></RouterLink></nav><p>{{t('企业权限决定管理能力，项目角色决定业务操作范围。')}}</p></div></aside>
-    <main class="org-main"><header class="org-page-head"><div><small>{{t('企业管理')}} / {{t(organizationSections.find(item=>item.key===section)?.name||'企业概览')}}</small><h1>{{t(organizationSections.find(item=>item.key===section)?.name||'企业概览')}}</h1></div><div class="org-header-actions"><RouterLink v-if="context?.isTenantAdmin&&section!=='wechat-login'&&!scope.locked.value" class="btn org-wechat-entry" to="/organization/wechat-login">{{t('微信登录配置')}}</RouterLink><Button variant="outline" :disabled="loading||scope.locked.value" @click="load">{{t('刷新概览')}}</Button></div></header>
+    <main class="org-main"><header class="org-page-head"><div><small>{{t('企业管理')}} / {{t(organizationSections.find(item=>item.key===section)?.name||'企业概览')}}</small><h1>{{t(organizationSections.find(item=>item.key===section)?.name||'企业概览')}}</h1></div><div class="org-header-actions"><RouterLink v-if="context?.isTenantAdmin&&section!=='wecom-app'&&!scope.locked.value" class="btn org-wechat-entry" to="/organization/wecom-app">{{t('企业微信自建应用')}}</RouterLink><Button variant="outline" :disabled="loading||scope.locked.value" @click="load">{{t('刷新概览')}}</Button></div></header>
       <p v-if="scope.locked.value" role="alert" class="org-error">{{t('项目或账号已变化，请刷新页面后继续')}}</p><p v-if="error" role="alert" class="org-error">{{t(error)}}</p><p v-if="loading&&!context" role="status">{{t('正在加载…')}}</p>
       <template v-if="context&&!scope.locked.value"><section v-if="section==='overview'" class="org-overview"><div class="org-hero"><span>{{t('团队协作，从清晰的组织开始')}}</span><h2>{{context.organization.name}}</h2><p>{{t('统一维护成员、部门和用户组；所有自助加入申请均需管理员审核。')}}</p><Button v-if="permits(context,'invitations.manage')" @click="navigate('invitations')">{{t('创建邀请链接')}} ↗</Button></div><div class="org-summary"><button v-for="card in cards" :key="card.key" type="button" @click="navigate(card.key)" @dblclick="navigate(card.key)"><span>{{t(card.label)}} <i>↗</i></span><b>{{card.value}}</b><small>{{t(card.note)}}</small></button></div><section class="org-explainer"><h3>{{t('加入组织的审批流程')}}</h3><ol><li>{{t('管理员生成有时效的邀请链接')}}</li><li>{{t('成员仅填写姓名、部门和申请角色')}}</li><li>{{t('管理员确认登录信息与项目角色')}}</li><li>{{t('通过并激活后才能登录和访问项目')}}</li></ol><p>{{t('不通过的申请不会创建账号；链接可随时撤销。')}}</p></section></section>
       <OrganizationMembers v-else-if="section==='members'" :context="context" @changed="load" />
@@ -40,6 +41,8 @@ onMounted(load)
       <ServerMonitor v-else-if="section==='server-monitor'&&context.isTenantAdmin" />
       <WechatSettings v-else-if="section==='wechat-login'&&context.isTenantAdmin" />
       <section v-else-if="section==='wechat-login'" class="org-error" role="alert">{{t('仅企业管理员可配置微信登录')}}</section>
+      <WecomCustomAppSettings v-else-if="section==='wecom-app'&&context.isTenantAdmin" />
+      <section v-else-if="section==='wecom-app'" class="org-error" role="alert">{{t('仅企业管理员可配置企业微信自建应用')}}</section>
       <DeliveryCenter v-else-if="section==='delivery'&&context.isTenantAdmin" />
       <section v-else-if="section==='delivery'" class="org-error" role="alert">{{t('仅企业管理员可以查看交付资料')}}</section>
       <section v-else-if="section==='server-monitor'" class="org-error" role="alert">{{t('仅企业管理员可以查看服务器监控')}}</section>

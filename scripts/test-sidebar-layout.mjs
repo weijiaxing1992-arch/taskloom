@@ -76,6 +76,26 @@ await test('collapsed navigation preserves every permitted route, icon, unread b
   for (const link of links) { assert(link.props.some(prop => prop.name === 'bind' && prop.arg?.content === 'aria-label')); assert(link.props.some(prop => prop.name === 'bind' && prop.arg?.content === 'title')) }
   assert.match(appSource, /unread > 99 \? '99\+' : unread/); assert.match(appSource, /class="rail-logout-icon"/); assert.match(appSource, /'rail-collapsed':railCollapsed/)
 })
+await test('low-frequency administration links are preserved in one compact, accessible management center', () => {
+  assert.match(appSource, /const hasManagementNavigation = computed\(/)
+  assert.match(appSource, /const managementNavigationOpen = ref\(false\)/)
+  assert.match(appSource, /<details v-if="hasManagementNavigation" class="management-nav" :open="managementNavigationOpen" @toggle="onManagementNavigationToggle">/)
+  assert.match(appSource, /<summary :aria-label="t\('管理中心'\)" :title="t\('管理中心'\)">/)
+  assert.match(appSource, /<nav class="management-nav-links" :aria-label="t\('管理中心'\)">/)
+  assert.doesNotMatch(appSource, /\{\{ t\('管理与配置'\) \}\}/)
+  for (const guard of [
+    'v-if="workspace.canManageProject" to="/settings/fields"',
+    'v-if="workspace.canManageProject" to="/settings/fields?tab=automation"',
+    'v-if="workspace.canManageProject" to="/audit"',
+    'v-if="workspace.canOpenOrganization" to="/organization"',
+    'v-if="workspace.canManageOrganization&&!session.impersonation" to="/settings/ai"',
+    'v-if="session.project?.id&&!session.impersonation" to="/settings/integrations"',
+  ]) assert.ok(appSource.includes(guard), guard)
+  assert.match(appSource, /active-class="" :class="\{'management-link-active':route\.path==='\/settings\/fields'&&route\.query\.tab==='automation'\}/)
+  assert.match(css, /\.management-nav > summary\s*\{[\s\S]*?list-style:\s*none;/)
+  assert.match(css, /\.management-nav\[open\]/)
+  assert.match(css, /\.management-nav-links a\.management-link-active/)
+})
 await test('desktop-only CSS uses theme tokens, preserves active/focus affordances, and loads after the collaboration layer', () => {
   // 样式文件经过格式化后空格不应影响布局契约；断言语义选择器与关键尺寸，
   // 避免把视觉层是否正确错误地绑定到 CSS 是否被压缩。
@@ -91,5 +111,14 @@ await test('collapse control remains reachable while the rail scrolls and the to
   assert.match(css, /\.top-actions \.icon-link em\s*\{[^}]*font-variant-numeric:\s*tabular-nums;[^}]*white-space:\s*nowrap;/)
   assert.match(appSource, /class="notification-badge"/)
   assert.match(appSource, /unread > 99 \? '99\+' : unread/)
+})
+await test('the current project selector stays a single shrinkable line and keeps its full name as a native tooltip', () => {
+  assert.match(appSource, /class="project-select"/)
+  assert.match(appSource, /:title="\[session\?\.project\?\.name, session\?\.project\?\.code\]\.filter\(Boolean\)\.join\(' · '\)"/)
+  const selector = /\.app-shell \.project-switcher \.project-select\s*\{([\s\S]*?)\}/.exec(css)?.[1]
+  assert(selector, 'project selector layout rule exists')
+  for (const declaration of ['display: block', 'flex: 1 1 auto', 'width: 100%', 'min-width: 0', 'min-height: 32px', 'overflow: hidden', 'text-overflow: ellipsis', 'white-space: nowrap']) assert.ok(selector.includes(declaration), declaration)
+  assert.match(css, /@media \(min-width: 1025px\) and \(max-width: 1300px\)[\s\S]*?\.project-switcher \.project-select\s*\{[\s\S]*?max-width:\s*200px/)
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*?\.project-switcher \.project-select\s*\{[\s\S]*?max-width:\s*calc\(100vw - 188px\)/)
 })
 console.log(`Passed ${count} sidebar layout and navigation tests.`)

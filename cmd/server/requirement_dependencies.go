@@ -18,6 +18,18 @@ import (
 const dependencyRelationBlocks = "blocks"
 const dependencyRelationRelates = "relates_to"
 
+// requirementDependencyState 是需求池、路线图等只读视图使用的交付依赖摘要。
+// 只统计当前账号可访问的两端项目，不能将跨项目依赖当作目录枚举入口。
+type requirementDependencyState struct {
+	State          string `json:"state"`
+	BlockedByCount int    `json:"blockedByCount"`
+	BlockingCount  int    `json:"blockingCount"`
+	RelatedCount   int    `json:"relatedCount"`
+}
+
+// 每条边要携带源、目标两个项目与需求编号；200 条时参数数低于 SQLite 常见的 999 上限。
+const requirementDependencyStateBatch = 200
+
 type dependencyScope struct {
 	TenantID      string
 	ProjectID     string
@@ -118,6 +130,102 @@ CREATE TABLE IF NOT EXISTS requirement_dependencies(
 CREATE INDEX IF NOT EXISTS idx_requirement_dependencies_source ON requirement_dependencies(source_tenant_id,source_project_id,source_requirement_id,relation_type,id DESC);
 CREATE INDEX IF NOT EXISTS idx_requirement_dependencies_target ON requirement_dependencies(target_tenant_id,target_project_id,target_requirement_id,relation_type,id DESC);`)
 	return err
+}
+
+// hydrateRequirementDependencyStates 为需求池完整候选集计算依赖摘要。
+// 调用方会在此之后再进行高级筛选和分页，因而“仅被阻塞”不会只检查当前页。
+// 每条依赖都同时校验源、目标项目的可见权限；看不到前置项时不返回其存在或数量。
+func (a *App) hydrateRequirementDependencyStates(ctx context.Context, items []Requirement) error {
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := a.dependencyAccessibleProjects(ctx); err != nil {
+		return err
+	}
+	catalog, err := a.stateCatalogByProject(ctx)
+	if err != nil {
+		return err
+	}
+	for index := range items {
+		items[index].DependencyStatus = &requirementDependencyState{State: "clear"}
+	}
+	for start := 0; start < len(items); start += requirementDependencyStateBatch {
+		end := min(start+requirementDependencyStateBatch, len(items))
+		batch := items[start:end]
+		byKey := make(map[string]*Requirement, len(batch))
+		predicates := make([]string, 0, len(batch)*2)
+		args := []any{tenantID, tenantID}
+		for index := range batch {
+			item := &batch[index]
+			byKey[dependencyStateKey(a.pid(), item.ID)] = item
+			predicates = append(predicates,
+				`(d.source_project_id=? AND d.source_requirement_id=?)`,
+				`(d.target_project_id=? AND d.target_requirement_id=?)`,
+			)
+			args = append(args, a.pid(), item.ID, a.pid(), item.ID)
+		}
+		args = append(args, a.uid(), a.uid(), a.uid(), a.uid())
+		rows, err := a.db.QueryContext(ctx, `SELECT d.source_project_id,d.source_requirement_id,d.target_project_id,d.target_requirement_id,d.relation_type,sr.status,tr.status
+ FROM requirement_dependencies d
+ JOIN requirements sr ON sr.tenant_id=d.source_tenant_id AND sr.project_id=d.source_project_id AND sr.id=d.source_requirement_id
+ JOIN requirements tr ON tr.tenant_id=d.target_tenant_id AND tr.project_id=d.target_project_id AND tr.id=d.target_requirement_id
+ JOIN projects sp ON sp.tenant_id=d.source_tenant_id AND sp.id=d.source_project_id AND sp.status='active'
+ JOIN projects tp ON tp.tenant_id=d.target_tenant_id AND tp.id=d.target_project_id AND tp.status='active'
+ WHERE d.source_tenant_id=? AND d.target_tenant_id=? AND (`+strings.Join(predicates, " OR ")+`)
+ AND (EXISTS(SELECT 1 FROM project_members pm WHERE pm.tenant_id=d.source_tenant_id AND pm.project_id=d.source_project_id AND pm.user_id=?) OR EXISTS(SELECT 1 FROM tenant_memberships tm WHERE tm.tenant_id=d.source_tenant_id AND tm.user_id=? AND tm.role='tenant_admin' AND tm.status='active'))
+ AND (EXISTS(SELECT 1 FROM project_members pm WHERE pm.tenant_id=d.target_tenant_id AND pm.project_id=d.target_project_id AND pm.user_id=?) OR EXISTS(SELECT 1 FROM tenant_memberships tm WHERE tm.tenant_id=d.target_tenant_id AND tm.user_id=? AND tm.role='tenant_admin' AND tm.status='active'))`, args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var sourceProject, targetProject, relation, sourceStatus, targetStatus string
+			var sourceID, targetID int64
+			if err = rows.Scan(&sourceProject, &sourceID, &targetProject, &targetID, &relation, &sourceStatus, &targetStatus); err != nil {
+				rows.Close()
+				return err
+			}
+			source, target := byKey[dependencyStateKey(sourceProject, sourceID)], byKey[dependencyStateKey(targetProject, targetID)]
+			if relation == dependencyRelationRelates {
+				if source != nil {
+					source.DependencyStatus.RelatedCount++
+				}
+				if target != nil {
+					target.DependencyStatus.RelatedCount++
+				}
+				continue
+			}
+			isTerminal := func(project, status string) bool {
+				state, found := catalog[project][status]
+				return found && terminalCategory(state.Category)
+			}
+			if source != nil && !isTerminal(targetProject, targetStatus) {
+				source.DependencyStatus.BlockingCount++
+			}
+			if target != nil && !isTerminal(sourceProject, sourceStatus) {
+				target.DependencyStatus.BlockedByCount++
+			}
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+	for index := range items {
+		state := items[index].DependencyStatus
+		if state.BlockedByCount > 0 {
+			state.State = "blocked"
+		} else if state.BlockingCount > 0 {
+			state.State = "blocking"
+		} else if state.RelatedCount > 0 {
+			state.State = "related"
+		}
+	}
+	return nil
+}
+
+func dependencyStateKey(project string, id int64) string {
+	return project + "\x00" + strconv.FormatInt(id, 10)
 }
 
 func dependencyPage(r *http.Request, defaultSize, maxSize int) (page, size int, err error) {
@@ -279,8 +387,16 @@ func (a *App) requirementDependencyCandidates(w http.ResponseWriter, r *http.Req
 		args = append(args, a.uid(), a.uid())
 	}
 	if query != "" {
-		where += ` AND (r.code LIKE '%' || ? || '%' ESCAPE '\' OR r.title LIKE '%' || ? || '%' ESCAPE '\')`
+		// Existing deployments may still have REQ-xxxx values in storage while
+		// the UI now exposes the concise numeric serial. Match the stable ID as
+		// well so both 000123 and REQ-000123 can find the same candidate.
+		where += ` AND (r.code LIKE '%' || ? || '%' ESCAPE '\' OR r.title LIKE '%' || ? || '%' ESCAPE '\'`
 		args = append(args, query, query)
+		if codeID := requirementCodeQueryID(query); codeID > 0 {
+			where += ` OR r.id=?`
+			args = append(args, codeID)
+		}
+		where += `)`
 	}
 	args = append(args, size+1, (page-1)*size)
 	queryArgs := append([]any{}, args[:len(args)-2]...)
@@ -305,6 +421,7 @@ func (a *App) requirementDependencyCandidates(w http.ResponseWriter, r *http.Req
 			failDependency(w, err)
 			return
 		}
+		item.Code = requirementDisplayCode(item.RequirementID, item.Code)
 		item.TenantID = tenantID
 		applyDependencyStatus(&item, catalog[item.ProjectID])
 		items = append(items, item)
@@ -414,6 +531,8 @@ func (a *App) readDependencyItems(ctx context.Context, q stateStore, current dep
 			&item.Source.ProjectName, &item.Source.Code, &item.Source.Title, &item.Source.Status, &item.Target.ProjectName, &item.Target.Code, &item.Target.Title, &item.Target.Status); err != nil {
 			return nil, false, err
 		}
+		item.Source.Code = requirementDisplayCode(item.Source.RequirementID, item.Source.Code)
+		item.Target.Code = requirementDisplayCode(item.Target.RequirementID, item.Target.Code)
 		applyDependencyStatus(&item.Source, catalog[item.Source.ProjectID])
 		applyDependencyStatus(&item.Target, catalog[item.Target.ProjectID])
 		item.RelationType = dependencyRelativeType(current, dependencyScope{TenantID: item.Source.TenantID, ProjectID: item.Source.ProjectID, RequirementID: item.Source.RequirementID}, item.RelationType)

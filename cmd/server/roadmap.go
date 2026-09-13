@@ -97,6 +97,7 @@ func (a *App) roadmap(w http.ResponseWriter, r *http.Request) {
 			failDependency(w, err)
 			return
 		}
+		item.Code = requirementDisplayCode(item.ID, item.Code)
 		state, ok := catalog[item.ProjectID][item.Status]
 		if !ok {
 			state = RequirementStatus{Key: item.Status, Name: item.Status, Category: "todo"}

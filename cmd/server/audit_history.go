@@ -64,6 +64,11 @@ type auditHistoryItem struct {
 func (a *App) migrateAuditHistory() error {
 	for _, statement := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_scope_timeline ON audit_logs(tenant_id,project_id,created_at DESC)`,
+		// 审计时间来自多个历史写入版本：有的精确到秒，有的带小数秒。
+		// 直接按 TEXT 排序会把“12:00:00Z”排在“12:00:00.250Z”之前，
+		// 也会在按日期筛选时漏掉当天零点后的带小数秒记录。表达式索引与
+		// 查询中的 julianday(created_at) 保持一致，既修正顺序又避免全表排序。
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_scope_timeline_julian ON audit_logs(tenant_id,project_id,julianday(created_at) DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_scope_actor_timeline ON audit_logs(tenant_id,project_id,actor_id,created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_scope_object_timeline ON audit_logs(tenant_id,project_id,object_type,created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_scope_action_timeline ON audit_logs(tenant_id,project_id,action,created_at DESC)`,
@@ -103,22 +108,29 @@ func (a *App) auditHistory(w http.ResponseWriter, r *http.Request) {
 	if query.ActorID != "" {
 		where, args = append(where, "al.actor_id=?"), append(args, query.ActorID)
 	}
+	// created_at 在早期版本使用 RFC3339，较新的路径会使用 RFC3339Nano。
+	// SQLite 的文本比较不能正确比较这两种字符串（例如 .250Z 与 Z），
+	// 因此所有时间范围、排序和游标都使用同一个时间轴表达式。
+	const timeline = "julianday(al.created_at)"
 	if query.From != "" {
-		where, args = append(where, "al.created_at>=?"), append(args, query.From)
+		where, args = append(where, timeline+">=julianday(?)"), append(args, query.From)
 	}
 	if query.To != "" {
-		where, args = append(where, "al.created_at<?"), append(args, query.To)
+		where, args = append(where, timeline+"<julianday(?)"), append(args, query.To)
 	}
 	if query.Cursor != nil {
 		// 时间相同的审计事件以递减 ID 打破平局；避免翻页时重复或跳过同秒事件。
-		where, args = append(where, "(al.created_at<? OR (al.created_at=? AND al.rowid<?))"), append(args, query.Cursor.CreatedAt, query.Cursor.CreatedAt, query.Cursor.ID)
+		// 游标也走时间轴表达式，保证跨 RFC3339/RFC3339Nano 的翻页稳定。
+		where, args = append(where, "("+timeline+"<julianday(?) OR ("+timeline+"=julianday(?) AND al.rowid<?))"), append(args, query.Cursor.CreatedAt, query.Cursor.CreatedAt, query.Cursor.ID)
 	}
 	args = append(args, query.Limit+1)
-	statement := `SELECT al.rowid,al.actor_id,COALESCE(u.name,''),al.object_type,al.object_id,al.action,al.before_json,al.after_json,al.created_at
+	// before_json/after_json 是审计表首次上线后补充的列。少量历史部署中存在
+	// NULL 值，因此读取时兜底为空对象；不能因一条旧记录让整页变更历史报错。
+	statement := `SELECT al.rowid,al.actor_id,COALESCE(u.name,''),al.object_type,al.object_id,al.action,COALESCE(al.before_json,'{}'),COALESCE(al.after_json,'{}'),al.created_at
 		FROM audit_logs al
 		LEFT JOIN users u ON u.tenant_id=al.tenant_id AND u.id=al.actor_id
 		WHERE ` + strings.Join(where, " AND ") + `
-		ORDER BY al.created_at DESC,al.rowid DESC
+		ORDER BY ` + timeline + ` DESC,al.rowid DESC
 		LIMIT ?`
 	rows, err := a.db.QueryContext(r.Context(), statement, args...)
 	if err != nil {
@@ -222,10 +234,12 @@ func parseAuditBound(raw string, upper bool) (string, error) {
 	if value == "" {
 		return "", nil
 	}
-	if len(value) == len("2006-01-02") {
-		day, err := time.Parse("2006-01-02", value)
+	// 原生日期控件会返回 YYYY-MM-DD；部分内嵌浏览器和从日历复制的旧链接会
+	// 使用斜杠。两种无歧义格式统一转换为 UTC，确保两端共用半开区间语义。
+	for _, layout := range []string{"2006-01-02", "2006/01/02"} {
+		day, err := time.Parse(layout, value)
 		if err != nil {
-			return "", errors.New("时间格式无效")
+			continue
 		}
 		if upper {
 			day = day.AddDate(0, 0, 1)

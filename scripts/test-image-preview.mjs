@@ -112,18 +112,44 @@ await test('attachment gallery includes image MIME types and legacy names withou
   assert.equal(props.modelValue.title, '草稿'); props.requirementId = 10; await flush(); assert.equal(r.previewOpen.value, false)
   for (const unmount of unmounts) unmount(); scope.stop()
 })
-await test('rich asset preview gathers only document image nodes and reuses its authorized current blob', async () => {
+await test('rich asset waits for visibility, reuses its authorized gallery blob and cleans up when its scope changes', async () => {
   const props = Vue.reactive({ node: { type: { name: 'image' }, attrs: { attachmentId: 2, name: '正文.png' } }, getPos: () => 7, editor: { state: { doc: { descendants(fn) {
     fn({ type: { name: 'image' }, attrs: { attachmentId: 1, name: '第一张.png' } }, 1)
     fn({ type: { name: 'attachment' }, attrs: { attachmentId: 4, name: '文档.pdf' } }, 4)
     fn(props.node, 7)
-  } } } } }), state = Vue.reactive({ requirementId: 9, readonly: true, disabled: false }), scope = Vue.effectScope(), unmounts = []
+  } } } } }), state = Vue.reactive({ requirementId: 9, readonly: true, disabled: false }), scope = Vue.effectScope(), mounts = [], unmounts = [], observers = [], calls = [], metadataCalls = [], urls = [], revocations = [], listeners = new Map()
+  const anchor = Vue.markRaw({}), visibleAsset = evaluate(read('src/visibleAsset.ts'), {}, {
+    IntersectionObserver: class {
+      constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this) }
+      observe(target) { this.target = target }
+      disconnect() { this.disconnected = true }
+      emit(isIntersecting, width = 100) { this.callback([{ target: this.target, isIntersecting, boundingClientRect: { width } }]) }
+    },
+  })
   let a
-  scope.run(() => { a = evaluate(raw(assetSource) + '\nexport {openPreview,previewItems,previewIndex,previewOpen,imageURL}', {
-    vue: { ...Vue, inject: () => Vue.computed(() => state), onBeforeUnmount: fn => unmounts.push(fn) }, '@tiptap/vue-3': { nodeViewProps: {} }, '../api': { apiDownload: async () => pngBlob() }, '../i18n': { t: value => value }, '../richText': rich,
-  }, { defineProps: () => props, URL: { createObjectURL: () => 'blob:authorized', revokeObjectURL() {} } }) })
-  await flush(); a.openPreview(); assert.equal(a.previewOpen.value, true); assert.equal(a.previewIndex.value, 1); assert.deepEqual(a.previewItems.value.map(item => item.attachmentId), [1, 2]); assert.ok(a.previewItems.value[1].blob instanceof Blob)
-  state.requirementId = 10; await flush(); assert.equal(a.previewOpen.value, false); for (const unmount of unmounts) unmount(); scope.stop()
+  scope.run(() => { a = evaluate(raw(assetSource) + '\nexport {openPreview,previewItems,previewIndex,previewOpen,imageURL,visibilityAnchor}', {
+    vue: { ...Vue, inject: () => Vue.computed(() => state), onMounted: fn => mounts.push(fn), onBeforeUnmount: fn => unmounts.push(fn) }, '@tiptap/vue-3': { nodeViewProps: {} },
+    '../api': { apiDownload: async path => { calls.push(path); return pngBlob() }, api: async path => { metadataCalls.push(path); return { category: 'image' } } },
+    '../i18n': { t: value => value }, '../richText': rich, '../visibleAsset': visibleAsset,
+  }, {
+    defineProps: () => props,
+    URL: { createObjectURL: blob => { const url = 'blob:authorized-' + (urls.length + 1); urls.push({ url, blob }); return url }, revokeObjectURL: url => revocations.push(url) },
+    window: { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name) } },
+  }) })
+  a.visibilityAnchor.value = anchor; for (const mount of mounts) mount()
+  await flush(); assert.equal(observers.length, 1); assert.equal(observers[0].target, anchor); assert.deepEqual(calls, []); assert.deepEqual(metadataCalls, [])
+  observers[0].emit(false); await flush(); assert.deepEqual(calls, []); assert.deepEqual(metadataCalls, [])
+  observers[0].emit(true, 0); await flush(); assert.deepEqual(calls, []); assert.deepEqual(metadataCalls, []); assert.equal(a.imageURL.value, ''); assert.equal(observers[0].disconnected, false)
+  a.openPreview(); assert.equal(a.previewOpen.value, false)
+  observers[0].emit(true); await flush(); assert.deepEqual(calls, ['/requirements/9/attachments/2']); assert.deepEqual(metadataCalls, ['/requirements/9/attachments/2?metadata=1']); assert.equal(observers[0].disconnected, true)
+  a.openPreview(); assert.equal(a.previewOpen.value, true); assert.equal(a.previewIndex.value, 1); assert.deepEqual(a.previewItems.value.map(item => item.attachmentId), [1, 2]); assert.equal(a.previewItems.value[0].blob, undefined); assert.equal(a.previewItems.value[1].blob, urls[0].blob)
+  const gallery = await preview({ items: a.previewItems.value, initialIndex: a.previewIndex.value }); assert.deepEqual(gallery.calls, []); assert.match(gallery.imageURL.value, /^blob:/); gallery.stop()
+  observers[0].emit(true); await flush(); assert.equal(calls.length, 1)
+  const previousURL = a.imageURL.value
+  state.requirementId = 10; await flush(); assert.equal(a.previewOpen.value, false); assert.equal(a.imageURL.value, ''); assert.deepEqual(revocations, [previousURL]); assert.equal(observers.length, 2); assert.equal(observers[1].target, anchor); assert.equal(observers[1].disconnected, false); assert.equal(calls.length, 1); assert.equal(metadataCalls.length, 1)
+  observers[0].emit(true); observers[1].emit(false); observers[1].emit(true, 0); await flush(); assert.equal(calls.length, 1); assert.equal(metadataCalls.length, 1)
+  for (const unmount of unmounts) unmount(); scope.stop(); assert.equal(observers.every(observer => observer.disconnected), true); assert.equal(listeners.size, 0)
+  observers[1].emit(true); await flush(); assert.equal(calls.length, 1); assert.equal(metadataCalls.length, 1)
 })
 await test('preview Vue template compiles with native modal and explicit non-submit controls', () => {
   for (const [filename, content] of [['ImagePreview.vue', imageSource], ['RequirementResources.vue', resourceSource], ['RichTextAsset.vue', assetSource]]) {

@@ -22,6 +22,7 @@ function moduleFrom(source, imports = {}) {
 }
 
 export const testingWorkspace = moduleFrom(await read('src/testingWorkspace.ts'))
+const memberRoles = moduleFrom(await read('src/memberRoles.ts'))
 
 export const flush = async (rounds = 8) => {
   for (let index = 0; index < rounds; index++) {
@@ -128,6 +129,7 @@ export async function mountTestingComponent(path, {
     '../../layoutScope': { useLayoutBoolean: (_key, fallback) => Vue.ref(fallback) },
     '../testingWorkspace': testingWorkspace,
     '../../testingWorkspace': testingWorkspace,
+    '../../memberRoles': memberRoles,
   }
   const compiled = {}
   new Function('require', 'exports', 'window', 'localStorage', transpile(script.content))(

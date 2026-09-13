@@ -25,12 +25,12 @@ type RoleWeight struct {
 var requirementWeightRoles = []string{"frontend", "backend", "algorithm", "ui", "product"}
 var tagColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
-const requirementSelectColumns = `id,code,title,type,description,acceptance,parent_id,category,sprint,status,priority,owner,assignee,tags,start_date,end_date,discipline,progress,estimated_hours,actual_hours,sensitive,auth_impact,updated_at,created_at,role_weights_json,tag_colors_json,remarks,assignee_user_id,owner_user_id,text_mentions_json,assignee_user_ids_json,owner_user_ids_json,description_doc_json`
+const requirementSelectColumns = `id,code,title,type,description,acceptance,parent_id,category,sprint,status,priority,owner,assignee,tags,start_date,end_date,discipline,progress,estimated_hours,actual_hours,sensitive,auth_impact,updated_at,created_at,role_weights_json,tag_colors_json,remarks,assignee_user_id,owner_user_id,text_mentions_json,assignee_user_ids_json,owner_user_ids_json,description_doc_json,iteration_delay_count`
 
 func scanRequirement(row interface{ Scan(...any) error }, x *Requirement) error {
 	var weights, colors, mentions, assignees, owners string
 	var descriptionDoc sql.NullString
-	if err := row.Scan(&x.ID, &x.Code, &x.Title, &x.Type, &x.Description, &x.Acceptance, &x.ParentID, &x.Category, &x.Sprint, &x.Status, &x.Priority, &x.Owner, &x.Assignee, &x.Tags, &x.StartDate, &x.EndDate, &x.Discipline, &x.Progress, &x.EstimatedHours, &x.ActualHours, &x.Sensitive, &x.AuthImpact, &x.UpdatedAt, &x.CreatedAt, &weights, &colors, &x.Remarks, &x.AssigneeUserID, &x.OwnerUserID, &mentions, &assignees, &owners, &descriptionDoc); err != nil {
+	if err := row.Scan(&x.ID, &x.Code, &x.Title, &x.Type, &x.Description, &x.Acceptance, &x.ParentID, &x.Category, &x.Sprint, &x.Status, &x.Priority, &x.Owner, &x.Assignee, &x.Tags, &x.StartDate, &x.EndDate, &x.Discipline, &x.Progress, &x.EstimatedHours, &x.ActualHours, &x.Sensitive, &x.AuthImpact, &x.UpdatedAt, &x.CreatedAt, &weights, &colors, &x.Remarks, &x.AssigneeUserID, &x.OwnerUserID, &mentions, &assignees, &owners, &descriptionDoc, &x.IterationDelayCount); err != nil {
 		return err
 	}
 	if err := json.Unmarshal([]byte(weights), &x.RoleWeights); err != nil {
@@ -57,6 +57,9 @@ func scanRequirement(row interface{ Scan(...any) error }, x *Requirement) error 
 	if x.TagColors == nil {
 		x.TagColors = map[string]string{}
 	}
+	// Old rows retain their stored REQ-* value for audit safety, while every
+	// read surface receives the new concise serial number.
+	normalizeRequirementCode(x)
 	return nil
 }
 
@@ -428,14 +431,14 @@ func (a *App) createRequirement(w http.ResponseWriter, r *http.Request) {
 		}
 		if id > 0 {
 			if !same {
-				fail(w, 409, "tapd_source_exists", fmt.Sprintf("此 TAPD 需求已导入为 REQ-%04d，源文件已变化，请在已有需求中核对更新", id))
+				fail(w, 409, "tapd_source_exists", fmt.Sprintf("此 TAPD 需求已导入为 %s，源文件已变化，请在已有需求中核对更新", requirementDisplayCode(id, "")))
 				return
 			}
-			write(w, 200, map[string]any{"id": id, "code": fmt.Sprintf("REQ-%04d", id), "alreadyImported": true})
+			write(w, 200, map[string]any{"id": id, "code": requirementDisplayCode(id, ""), "alreadyImported": true})
 			return
 		}
 	}
-	if _, err := a.validateRequirementStateWrite(r.Context(), tx, &x, true, true); err != nil {
+	if err := a.validateRequirementImportState(r.Context(), tx, &x); err != nil {
 		failState(w, err)
 		return
 	}
@@ -461,7 +464,9 @@ func (a *App) createRequirement(w http.ResponseWriter, r *http.Request) {
 		x.Description = doc.plainText()
 	}
 	if err == nil {
-		x.Code = fmt.Sprintf("REQ-%04d", x.ID)
+		x.Code, err = requirementSerialCode(x.ID)
+	}
+	if err == nil {
 		_, err = tx.Exec(`UPDATE requirements SET code=?,text_mentions_json=?,assignee_user_ids_json=?,owner_user_ids_json=?,description_doc_json=?,description=? WHERE id=? AND tenant_id=? AND project_id=?`, x.Code, requirementMentionJSON(&x), jsonText(x.AssigneeUserIDs), jsonText(x.OwnerUserIDs), richSQL(x.DescriptionDoc), x.Description, x.ID, tenantID, a.pid())
 	}
 	if err == nil && doc != nil {
@@ -474,7 +479,19 @@ func (a *App) createRequirement(w http.ResponseWriter, r *http.Request) {
 		err = a.persistTapdImport(tx, &x, importSource)
 	}
 	if err == nil {
-		_, err = tx.Exec(`INSERT INTO activities(tenant_id,project_id,requirement_id,actor,event,detail,created_at)VALUES(?,?,?,?,?,?,?)`, tenantID, a.pid(), x.ID, actor, "created", "创建了需求", x.CreatedAt)
+		var activity sql.Result
+		activity, err = tx.Exec(`INSERT INTO activities(tenant_id,project_id,requirement_id,actor,event,detail,created_at)VALUES(?,?,?,?,?,?,?)`, tenantID, a.pid(), x.ID, actor, "created", "创建了需求", x.CreatedAt)
+		if err == nil {
+			var activityID int64
+			activityID, err = activity.LastInsertId()
+			if err == nil {
+				var after map[string]any
+				_, after, err = a.requirementSnapshot(tx, x.ID)
+				if err == nil {
+					err = a.recordRequirementHistory(tx, activityID, x.ID, map[string]any{}, after, false)
+				}
+			}
+		}
 	}
 	if err == nil {
 		for i := range peopleNotices {
@@ -488,6 +505,10 @@ func (a *App) createRequirement(w http.ResponseWriter, r *http.Request) {
 		err = tx.Commit()
 	}
 	if err != nil {
+		if errors.Is(err, errRequirementCodeExhausted) {
+			fail(w, http.StatusConflict, "requirement_code_exhausted", err.Error())
+			return
+		}
 		if failCustomFieldValidation(w, err) {
 			return
 		}
@@ -500,7 +521,8 @@ func (a *App) createRequirement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	x.CustomFields = a.customFields("requirement", x.ID)
-	x.TapdImport = nil // 不把 PDF Base64 回传到列表、日志或通知中。
+	x.IterationDelayCount = 0 // Derived value cannot be supplied by a creating client.
+	x.TapdImport = nil        // 不把 PDF Base64 回传到列表、日志或通知中。
 	if err := a.hydrateRequirementState(r.Context(), &x); err != nil {
 		failState(w, err)
 		return
@@ -694,8 +716,8 @@ func (a *App) patchRequirement(w http.ResponseWriter, r *http.Request, id int64)
 		err = a.writeRequirementCustomFields(tx, id, fields, x.UpdatedAt)
 	}
 	var saved Requirement
+	var afterValues map[string]any
 	if err == nil {
-		var afterValues map[string]any
 		saved, afterValues, err = a.requirementSnapshot(tx, id)
 		if err == nil {
 			changed = requirementActualChanges(beforeValues, afterValues)
@@ -723,6 +745,9 @@ func (a *App) patchRequirement(w http.ResponseWriter, r *http.Request, id int64)
 		if err == nil {
 			changeActivityID, err = activity.LastInsertId()
 		}
+	}
+	if err == nil {
+		err = a.recordRequirementHistory(tx, changeActivityID, id, beforeValues, afterValues, true)
 	}
 	if err == nil {
 		for i := range peopleNotices {

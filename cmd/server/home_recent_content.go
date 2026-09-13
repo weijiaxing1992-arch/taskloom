@@ -85,6 +85,7 @@ LIMIT ?`, tenantID, a.uid(), a.uid(), limit)
 		}
 		switch item.ObjectType {
 		case "requirement":
+			item.Code = requirementDisplayCode(item.ID, item.Code)
 			item.Event, item.URL = "更新了需求", "/requirements?req="+strconv.FormatInt(item.ID, 10)
 		case "defect":
 			item.Event, item.URL = "更新了缺陷", "/defects?bug="+strconv.FormatInt(item.ID, 10)

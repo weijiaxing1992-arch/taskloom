@@ -22,7 +22,7 @@ async function load() {
   const request = target()
   favorited.value = null; loading.value = true; saving.value = false; error.value = ''
   if (!Number.isSafeInteger(request.id) || request.id <= 0) { loading.value = false; error.value = '需求不存在'; return }
-  try { accept(await api<FavoriteState>(`/requirements/${request.id}/favorite`, { headers: { 'X-DevFlow-Project': request.project } }), request) }
+  try { accept(await api<FavoriteState>(`/requirements/${request.id}/favorite`, { headers: { 'X-TaskLoom-Project': request.project } }), request) }
   catch (cause: any) { if (current(request)) error.value = cause?.message || '收藏状态加载失败' }
   finally { if (current(request)) loading.value = false }
 }
@@ -31,7 +31,7 @@ async function toggle() {
   const request = target(), method = favorited.value ? 'DELETE' : 'PUT'
   saving.value = true; error.value = ''
   try {
-    const state = await api<FavoriteState>(`/requirements/${request.id}/favorite`, { method, headers: { 'X-DevFlow-Project': request.project } })
+    const state = await api<FavoriteState>(`/requirements/${request.id}/favorite`, { method, headers: { 'X-TaskLoom-Project': request.project } })
     if (!current(request)) return
     accept(state, request)
     emit('change', state.favorited)

@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var integrationResources = map[string]string{"requirements": "requirements", "iterations": "sprints", "defects": "defects", "test-cases": "test-cases", "executions": "test-executions"}
+var integrationResources = map[string]string{"requirements": "requirements", "iterations": "sprints", "defects": "defects", "test-cases": "test-cases", "executions": "test-executions", "notifications": "notifications", "release-notes": "release-notes"}
 var integrationTables = map[string]string{"requirements": "requirements", "iterations": "sprints", "defects": "defects", "test-cases": "test_cases", "executions": "test_executions"}
 
 const integrationResponseLimit = 16 << 20
@@ -79,6 +79,35 @@ func integrationResolveRoute(path, method string) (integrationRoute, bool) {
 	route.legacy = integrationResources[route.resource]
 	if route.legacy == "" {
 		return route, false
+	}
+	// 通知是凭据所有者的个人收件箱，只开放列表和单条详情读取。已读状态
+	// 仍只能由站内交互修改，避免轮询型集成改变用户的阅读状态。
+	if route.resource == "notifications" {
+		if method != http.MethodGet || len(parts) > 2 {
+			return route, false
+		}
+		if len(parts) == 2 {
+			var ok bool
+			route.id, ok = integrationPositive(parts[1])
+			if !ok {
+				return route, false
+			}
+		}
+		return route, true
+	}
+	// 升级日志是已保存快照的只读资源，不可被通用创建/更新转发逻辑误开放。
+	if route.resource == "release-notes" {
+		if method != http.MethodGet || len(parts) > 2 {
+			return route, false
+		}
+		if len(parts) == 2 {
+			var ok bool
+			route.id, ok = integrationPositive(parts[1])
+			if !ok {
+				return route, false
+			}
+		}
+		return route, true
 	}
 	if len(parts) > 1 {
 		var ok bool
@@ -173,6 +202,14 @@ func (a *App) integrationServeAuthorized(w http.ResponseWriter, r *http.Request,
 	}
 	if !integrationHas(key.Scopes, scope) {
 		fail(response, 403, "insufficient_scope", "凭证未授权此操作")
+		return
+	}
+	if route.resource == "release-notes" {
+		a.integrationReleaseNotes(response, r, route)
+		return
+	}
+	if route.resource == "notifications" {
+		a.integrationNotifications(response, r, route)
 		return
 	}
 	if r.Method == "GET" {

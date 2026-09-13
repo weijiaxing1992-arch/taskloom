@@ -1,0 +1,146 @@
+/*
+ * 共享微动效层
+ *
+ * 灵感来自 ReactBits 的「Glass / Animated Content / Hover」交互语言，但这里是
+ * 独立编写的 Vue/CSS 实现：只为已有控件增加轻量反馈，不引入 React 运行时、
+ * 不改变点击命中区域，也不接管页面的业务状态。
+ */
+
+:root {
+  --df-motion-duration-fast: 150ms;
+  --df-motion-duration: 240ms;
+  --df-motion-ease: cubic-bezier(.2, .78, .2, 1);
+  --df-motion-origin-x: 50%;
+  --df-motion-origin-y: 50%;
+  --df-motion-ripple: color-mix(in srgb, #ffffff 58%, transparent);
+}
+
+/*
+ * 所有增加波纹的组件都显式标记为 df-motion-pressable。伪元素永远不参与命中
+ * 测试，避免覆盖下拉、路由或可访问的原生按键行为。
+ */
+.df-motion-pressable {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.df-motion-pressable::after {
+  position: absolute;
+  z-index: 0;
+  inset: -1px;
+  pointer-events: none;
+  content: '';
+  border-radius: inherit;
+  opacity: 0;
+  background: radial-gradient(circle at var(--df-motion-origin-x) var(--df-motion-origin-y), var(--df-motion-ripple) 0, transparent 42%);
+  transform: scale(.28);
+  transform-origin: var(--df-motion-origin-x) var(--df-motion-origin-y);
+}
+
+.df-motion-pressable > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 选项行不需要阴影，改用浅色扫过和极小位移表达当前可选择状态。 */
+.df-motion-list-row {
+  transition: background-color var(--df-motion-duration-fast) var(--df-motion-ease),
+    color var(--df-motion-duration-fast) var(--df-motion-ease),
+    transform var(--df-motion-duration-fast) var(--df-motion-ease);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .df-motion-pressable[data-motion-press='active']::after {
+    animation: df-motion-ripple 520ms var(--df-motion-ease) both;
+  }
+
+  /* 浮层由 Reka 负责定位；这里只淡入透明度，避免改写其 transform 定位结果。 */
+  [data-slot='popover-content'].df-motion-overlay[data-state='open'] {
+    animation: df-motion-overlay-in var(--df-motion-duration-fast) var(--df-motion-ease) both;
+  }
+
+  /* 旧式 .btn 和新 Button 共享克制的按下反馈；不添加额外覆盖层。 */
+  .app-shell :is(.btn, [data-slot='button'], .app-select-trigger, .app-select-option):not(:disabled) {
+    transition: transform var(--df-motion-duration-fast) var(--df-motion-ease),
+      box-shadow var(--df-motion-duration-fast) var(--df-motion-ease),
+      border-color var(--df-motion-duration-fast) var(--df-motion-ease),
+      background-color var(--df-motion-duration-fast) var(--df-motion-ease),
+      filter var(--df-motion-duration-fast) var(--df-motion-ease);
+  }
+
+  .app-shell :is(.btn, [data-slot='button'], .app-select-trigger, .app-select-option):not(:disabled):active {
+    transform: translate3d(0, 0, 0) scale(.985);
+  }
+
+  /* 仅在具有精确悬停能力的设备上为可点击卡片和列表增加抬升，触摸端保持稳定。 */
+  @media (hover: hover) and (pointer: fine) {
+    .app-shell :is(.project-card:not(.archived-project), .recent-content-item,
+      .release-center-list button, .org-summary > button):not(:disabled) {
+      transition: transform var(--df-motion-duration) var(--df-motion-ease),
+        box-shadow var(--df-motion-duration) var(--df-motion-ease),
+        border-color var(--df-motion-duration) var(--df-motion-ease),
+        background-color var(--df-motion-duration) var(--df-motion-ease);
+    }
+
+    .app-shell :is(.project-card:not(.archived-project), .recent-content-item,
+      .release-center-list button, .org-summary > button):not(:disabled):hover {
+      transform: translate3d(0, -2px, 0);
+    }
+
+    .app-shell .df-motion-list-row:not(:disabled):hover {
+      transform: translate3d(2px, 0, 0);
+    }
+  }
+
+  /* 抽起层保留原本的遮罩点击和焦点管理，只把入场曲线变得更柔和。 */
+  .slide-panel-shade > :is(.modal, .org-modal, .settings-modal, .test-modal) {
+    animation: df-motion-drawer-in var(--df-motion-duration) var(--df-motion-ease) both;
+  }
+
+  @media (max-width: 820px) {
+    .slide-panel-shade > :is(.modal, .org-modal, .settings-modal, .test-modal) {
+      animation-name: df-motion-sheet-in;
+    }
+  }
+}
+
+@keyframes df-motion-ripple {
+  0% { opacity: .32; transform: scale(.18); }
+  72% { opacity: .13; }
+  100% { opacity: 0; transform: scale(1.3); }
+}
+
+@keyframes df-motion-overlay-in {
+  from { opacity: .01; }
+  to { opacity: 1; }
+}
+
+@keyframes df-motion-drawer-in {
+  from { opacity: .42; transform: translate3d(18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes df-motion-sheet-in {
+  from { opacity: .42; transform: translate3d(0, 18px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+/* 高对比模式优先保留原生边框和文字对比，而不是绘制半透明光晕。 */
+@media (forced-colors: active) {
+  .df-motion-pressable::after { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .df-motion-pressable::after,
+  [data-slot='popover-content'].df-motion-overlay,
+  .slide-panel-shade > :is(.modal, .org-modal, .settings-modal, .test-modal) {
+    animation: none !important;
+  }
+
+  .app-shell :is(.btn, [data-slot='button'], .app-select-trigger, .app-select-option,
+    .project-card, .recent-content-item, .release-center-list button, .org-summary > button),
+  .app-shell .df-motion-list-row {
+    transition: none !important;
+  }
+}

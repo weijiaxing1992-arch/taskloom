@@ -3,12 +3,13 @@ export interface DefectMember {
   name: string
   active?: boolean
   projectRole?: string
+  projectRoles?: string[]
   role?: string
   isCurrent?: boolean
 }
 
 export function qaMembers<T extends DefectMember>(members: T[]): T[] {
-  return members.filter(member => member.active !== false && (member.projectRole || member.role) === 'qa')
+  return members.filter(member => member.active !== false && (member.projectRoles ?? [member.projectRole || member.role]).includes('qa'))
 }
 
 /** Prefer the current tester; never arbitrarily assign one of several testers. */

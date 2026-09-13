@@ -137,7 +137,7 @@ await test('dependency detail uses scoped CRUD endpoints, keeps bounded records,
   assert.equal(context.items.find(item => item.id === 91).relationType, 'blocked_by')
   await context.remove(context.items.find(item => item.id === 91))
   assert(!context.items.some(item => item.id === 91))
-  assert(api.calls.every(call => call.options.headers.get('X-DevFlow-Project') === 'project-a'))
+  assert(api.calls.every(call => call.options.headers.get('X-TaskLoom-Project') === 'project-a'))
   mounted.stop()
 })
 
@@ -159,7 +159,7 @@ await test('roadmap groups planned work, supports the opt-in accessible-project 
   assert(api.calls.some(call => call.path.includes('scope=all')))
   context.open(context.items.find(item => item.projectId === 'project-insight'))
   assert.deepEqual(mounted.navigations, ['/requirements?req=28&project=project-insight'])
-  assert(api.calls.every(call => call.options.headers.get('X-DevFlow-Project') === 'project-a'))
+  assert(api.calls.every(call => call.options.headers.get('X-TaskLoom-Project') === 'project-a'))
   mounted.stop()
 })
 
@@ -171,7 +171,7 @@ await test('dependency and roadmap entry points remain additive to legacy requir
   assert.match(dependencySource, /requirement-dependency-candidates/)
   assert.match(dependencySource, /\/dependencies\//)
   assert.match(roadmapSource, /\/roadmap\?/)
-  for (const key of ['需求依赖', '被阻塞', '交付路线图', '被阻塞 · {count} 项前置未完成']) assert(words[key], 'missing English entry ' + key)
+  for (const key of ['需求依赖', '依赖状态', '被阻塞', '仅被阻塞', '交付路线图', '被阻塞 · {count} 项前置未完成']) assert(words[key], 'missing English entry ' + key)
 })
 
 console.log(`Passed ${count} requirement dependency and roadmap frontend tests.`)

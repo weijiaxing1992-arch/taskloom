@@ -42,8 +42,8 @@ await test('attachment client rejects over 10 MiB before any upload request',asy
 })
 await test('attachment multipart and download retain project and identity authorization headers',async()=>{
  const calls=[],events=[],m=module(read('src/api.ts'),{'./i18n':{t,locale:{value:'en-US'}}},{localStorage:{getItem:()=> 'prj_insight'},window:{dispatchEvent:e=>events.push(e)},CustomEvent:class{},fetch:async(path,options)=>{calls.push({path,options});return {ok:true,json:async()=>({user:{id:'u_1'}}),blob:async()=>new Blob(['bytes'])}}})
- await m.api('/session');const form=new FormData();form.append('file',new Blob(['data']),'example.txt');await m.api('/requirements/9/attachments',{method:'POST',body:form});const upload=calls.at(-1);assert.equal(upload.options.headers.has('Content-Type'),false);assert.equal(upload.options.headers.get('X-DevFlow-Project'),'prj_insight')
- const blob=await m.apiDownload('/requirements/9/attachments/1');assert.equal(await blob.text(),'bytes');assert.equal(calls.at(-1).options.headers.get('X-DevFlow-Expected-User'),'u_1')
+ await m.api('/session');const form=new FormData();form.append('file',new Blob(['data']),'example.txt');await m.api('/requirements/9/attachments',{method:'POST',body:form});const upload=calls.at(-1);assert.equal(upload.options.headers.has('Content-Type'),false);assert.equal(upload.options.headers.get('X-TaskLoom-Project'),'prj_insight')
+ const blob=await m.apiDownload('/requirements/9/attachments/1');assert.equal(await blob.text(),'bytes');assert.equal(calls.at(-1).options.headers.get('X-TaskLoom-Expected-User'),'u_1')
 })
 await test('controlled Figma draft survives resource-tab unmounts and only explicit cancel discards it',async()=>{
  const state=Vue.reactive({modelValue:{url:'',title:'',opened:false},requirementId:9,canEdit:true})

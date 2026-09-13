@@ -42,7 +42,7 @@ defineExpose({dirty,canLeave,requestClose})
 </script>
 
 <template>
-  <OrganizationModal :title="title" :busy="busy" wide @close="requestClose">
+  <OrganizationModal :title="title" :busy="busy" :presentation="action==='wecom-config'?'drawer':'confirmation'" wide @close="requestClose">
     <form id="org-member-bulk-form" class="org-form member-bulk-form" @submit.prevent="submit">
       <p class="member-bulk-summary">{{t('本次将处理 {count} 位成员，请逐一核对名单',{count:members.length})}}</p>
       <p v-if="action==='activate'" class="org-note">{{t('激活账号并恢复业务操作。已设置的密码保留；缺少凭据时按系统初始密码规则处理，无法激活的任一成员会使整批失败。')}}</p>

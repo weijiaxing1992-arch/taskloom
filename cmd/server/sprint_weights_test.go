@@ -39,7 +39,8 @@ func weightSummaryResponse(t *testing.T, a *App, path string) SprintWeightSummar
 
 func TestSprintWeightsManualDimensionsPrecisionNullZeroAndHierarchy(t *testing.T) {
 	a := testApp(t)
-	s := planningSprint(t, a, "权重精度迭代", "已完成")
+	s := planningSprint(t, a, "权重精度迭代", "进行中")
+	bulkFixtureExec(t, a, `UPDATE sprints SET status='已完成' WHERE id=?`, s.ID)
 	parent := insertWeightRequirement(t, a, tenantID, a.pid(), s.Name, "已完成", `{"frontend":{"value":0.1},"backend":{"value":0.2},"algorithm":{"value":2},"ui":{"value":3.25},"product":{"value":4.125}}`, nil)
 	child := insertWeightRequirement(t, a, tenantID, a.pid(), s.Name, "开发中", `{"frontend":{"value":6e-7},"backend":{"value":4e-7}}`, &parent)
 	insertWeightRequirement(t, a, tenantID, a.pid(), s.Name, "已拒绝", `{"frontend":{"value":0}}`, nil)

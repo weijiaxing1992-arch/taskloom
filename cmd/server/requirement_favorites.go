@@ -185,6 +185,7 @@ func (a *App) favoriteWork(w http.ResponseWriter, r *http.Request) {
 	items := []favoriteWorkItem{}
 	counts := map[string]int{"active": 0, "all": 0, "todo": 0, "doing": 0, "due": 0, "overdue": 0, "completed": 0, "cancelled": 0}
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	queryRequirementID := requirementCodeQueryID(q)
 	typ := r.URL.Query().Get("type")
 	status := r.URL.Query().Get("status")
 	category := r.URL.Query().Get("category")
@@ -195,6 +196,7 @@ func (a *App) favoriteWork(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		item.Type = "需求"
+		item.Code = requirementDisplayCode(item.ID, item.Code)
 		item.Role = "favorite"
 		item.Favorited = true
 		item.URL = fmt.Sprintf("/requirements?req=%d", item.ID)
@@ -202,7 +204,7 @@ func (a *App) favoriteWork(w http.ResponseWriter, r *http.Request) {
 		if !matchesWorkSprint(item.workItem, selectedSprint) {
 			continue
 		}
-		if typ != "" && typ != item.Type || status != "" && status != item.Status || q != "" && !strings.Contains(strings.ToLower(item.Title+" "+item.Code+" "+item.ProjectName), q) {
+		if typ != "" && typ != item.Type || status != "" && status != item.Status || q != "" && !strings.Contains(strings.ToLower(item.Title+" "+item.Code+" "+item.ProjectName), q) && queryRequirementID != item.ID {
 			continue
 		}
 		counts[item.Category]++

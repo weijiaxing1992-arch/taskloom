@@ -123,9 +123,23 @@ await test('App fetches only minimal session while required or disabled, includi
     const value = session('u-a', flags); value.project = { id: '', name: '', code: '' }
     const m = appHarness(async path => { assert.equal(path, '/session'); return value }, { query: { project: 'not-authorized-yet' } }); assert.equal(await m.load(), true)
     assert.deepEqual(m.calls.map(call => call.path), ['/session']); assert.equal(m.workspace.mustChangePassword, true); assert.deepEqual(m.workspace.projects, []); assert.equal(m.workspace.unread, 0)
-    await m.refreshUnread(); assert.equal(m.calls.length, 1); for (const permission of ['canManageOrganization', 'canManageProject', 'canOpenOrganization', 'canViewReports']) assert.equal(m.workspace[permission], false, permission)
+    await m.refreshUnread(); assert.equal(m.calls.length, 1); for (const permission of ['canManageOrganization', 'canManageProject', 'canOpenOrganization', 'canViewReports', 'canAccessWorkload']) assert.equal(m.workspace[permission], false, permission)
     assert.equal(m.storage.get('devflow-project'), undefined); m.stop()
   }
+})
+await test('read-only impersonation of a pending-password account loads the workspace rather than the first-password gate', async () => {
+  // The server deliberately presents mustChangePassword=false for this short-lived,
+  // read-only review session while retaining the target account's database flag.
+  // App must therefore load only safe workspace reads and not render the password form.
+  const review = session('u_member', { mustChangePassword: false })
+  review.impersonation = { adminName: '管理员', readOnly: true }
+  review.canImpersonate = false
+  const m = appHarness(async path => path === '/session' ? review : path === '/projects' ? { items: [{ id: 'p', status: 'active' }] } : path === '/notifications/unread-count' ? { unread: 1 } : {})
+  assert.equal(await m.load(), true)
+  assert.deepEqual(m.calls.map(call => call.path).sort(), ['/session', '/projects', '/notifications/unread-count', '/preferences/display'].sort())
+  assert.equal(m.workspace.mustChangePassword, false)
+  assert.equal(m.session.value.impersonation.readOnly, true)
+  m.stop()
 })
 await test('normal App load still retrieves business context and permission gates recover only from verified session', async () => {
   const m = appHarness(async path => path === '/session' ? session() : path === '/projects' ? { items: [{ id: 'p', status: 'active' }] } : path === '/notifications/unread-count' ? { unread: 2 } : {})
@@ -142,8 +156,8 @@ await test('App renders disabled gate before forced-password gate, and both befo
 })
 await test('real api sends verified expected-user header for initial password even though other auth routes omit it', async () => {
   const a = apiHarness(); await a.api('/session'); await a.api('/auth/initial-password', { method: 'POST', body: '{}' }); const req = a.calls.at(-1)
-  assert.equal(req.options.headers.get('X-DevFlow-Expected-User'), 'u-a'); assert.equal(req.options.headers.get('X-DevFlow-Project'), 'p-current'); assert.equal(req.options.headers.get('Content-Type'), 'application/json'); assert.equal(req.options.credentials, 'same-origin')
-  await a.api('/auth/impersonation/stop', { method: 'POST', body: '{}' }); assert.equal(a.calls.at(-1).options.headers.get('X-DevFlow-Expected-User'), null)
+  assert.equal(req.options.headers.get('X-TaskLoom-Expected-User'), 'u-a'); assert.equal(req.options.headers.get('X-TaskLoom-Project'), 'p-current'); assert.equal(req.options.headers.get('Content-Type'), 'application/json'); assert.equal(req.options.credentials, 'same-origin')
+  await a.api('/auth/impersonation/stop', { method: 'POST', body: '{}' }); assert.equal(a.calls.at(-1).options.headers.get('X-TaskLoom-Expected-User'), null)
 })
 await test('current initial-password-required response emits account-scoped event and preserves API error', async () => {
   const a = apiHarness(); await a.api('/session'); const hold = deferred(); a.pending.set('/api/requirements', hold)
@@ -164,7 +178,7 @@ await test('same-account re-login increments identity generation so previous ses
     await a.api('/auth/logout', { method: 'POST', body: '{}' }); await a.api('/auth/login', { method: 'POST', body: '{}' }); await a.api('/session')
     assert.deepEqual(a.events.map(x=>x.type), ['devflow-auth-session-ended','devflow-auth-session-ended']); a.events.length=0
     old.resolve(failResponse(status, code)); await promise; assert.equal(a.events.length, 0, code)
-    await a.api('/auth/initial-password', { method: 'POST', body: '{}' }); assert.equal(a.calls.at(-1).options.headers.get('X-DevFlow-Expected-User'), 'u-a')
+    await a.api('/auth/initial-password', { method: 'POST', body: '{}' }); assert.equal(a.calls.at(-1).options.headers.get('X-TaskLoom-Expected-User'), 'u-a')
   }
 })
 await test('late successful session response or JSON body cannot replace or freeze a newer verified identity', async () => {
@@ -177,7 +191,7 @@ await test('late successful session response or JSON body cannot replace or free
     assert.deepEqual(a.events.map(x=>x.type), ['devflow-auth-session-ended','devflow-auth-session-ended']); a.events.length=0
     old.resolve(delay === 'response' ? { ok: true, status: 200, json: async () => session('u-a') } : session('u-a'))
     await promise; assert.equal(a.events.length, 0, delay)
-    await a.api('/auth/initial-password', { method: 'POST', body: '{}' }); assert.equal(a.calls.at(-1).options.headers.get('X-DevFlow-Expected-User'), 'u-b')
+    await a.api('/auth/initial-password', { method: 'POST', body: '{}' }); assert.equal(a.calls.at(-1).options.headers.get('X-TaskLoom-Expected-User'), 'u-b')
     assert.equal((await a.api('/session')).user.id, 'u-b')
   }
 })
@@ -190,7 +204,7 @@ await test('late successful download Blob is discarded after cross-account or sa
     assert.deepEqual(a.events.map(x=>x.type), ['devflow-auth-session-ended','devflow-auth-session-ended']); a.events.length=0
     oldBlob.resolve(new Blob(['old-session-private-report'])); await promise; assert.equal(a.events.length, 0, nextUser)
     a.pending.set('/api' + path, { promise: Promise.resolve({ ok: true, status: 200, blob: async () => new Blob(['current-authorized-report']) }) })
-    assert.equal(await (await a.apiDownload(path)).text(), 'current-authorized-report'); assert.equal(a.calls.at(-1).options.headers.get('X-DevFlow-Expected-User'), nextUser)
+    assert.equal(await (await a.apiDownload(path)).text(), 'current-authorized-report'); assert.equal(a.calls.at(-1).options.headers.get('X-TaskLoom-Expected-User'), nextUser)
   }
 })
 console.log(`Passed ${count} first-password form, workspace gate, and request-identity regressions.`)

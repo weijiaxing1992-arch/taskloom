@@ -33,9 +33,9 @@ func TestWatermarkAuthenticationIsolationAndReadOnly(t *testing.T) {
 		r.RemoteAddr = "[2001:db8::123]:4137"
 		r.Header.Set("X-Forwarded-For", "203.0.113.9")
 		r.Header.Set("X-Real-IP", "203.0.113.10")
-		r.Header.Set("X-DevFlow-User", "u_front")
-		r.Header.Set("X-DevFlow-Project", "deleted-project")
-		r.Header.Set("X-DevFlow-Expected-User", expected)
+		r.Header.Set("X-TaskLoom-User", "u_front")
+		r.Header.Set("X-TaskLoom-Project", "deleted-project")
+		r.Header.Set("X-TaskLoom-Expected-User", expected)
 		if authenticated {
 			r.AddCookie(cookie)
 		}

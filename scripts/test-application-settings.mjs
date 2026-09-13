@@ -50,7 +50,7 @@ let count=0;async function test(name,run){await run();count++;console.log('✓ '
 
 await test('field catalogue separates system/custom data and scopes every request',async()=>{
   const m=await component('src/views/Fields.vue',fieldsExpose);assert.equal(m.systemFields.value[0].key,'title');assert.equal(m.items.value[0].key,'testers');assert.equal(m.missingCount.value,1)
-  for(const call of m.calls)assert.equal(call.options.headers.get('X-DevFlow-Project'),'p-current');m.stop()
+  for(const call of m.calls)assert.equal(call.options.headers.get('X-TaskLoom-Project'),'p-current');m.stop()
 })
 await test('people defaults select stable IDs and the real department relationship, including duplicate names',async()=>{
   const m=await component('src/views/Fields.vue',fieldsExpose);m.open();Object.assign(m.form,{name:'评审成员',key:'reviewers',type:'users',departmentId:'d_front'});assert.deepEqual(m.eligibleMembers.value.map(item=>item.id),['u_front'])
@@ -103,7 +103,7 @@ await test('custom field deletion requires explicit confirmation and cancel neve
 await test('confirmed deletion binds the exact field, preserves other rows, and reports retained history',async()=>{
   const m=await component('src/views/Fields.vue',fieldsExpose,(path,options)=>options?.method==='DELETE'?{deleted:true,id:7,preservedValueCount:12}:defaultAPI(path,options))
   m.items.value.push({...baseField,id:8,key:'other',name:'另一个字段'});m.beginDelete(baseField);await m.confirmDelete()
-  const call=m.calls.find(call=>call.options.method==='DELETE');assert.equal(call.path,'/field-definitions/7');assert.deepEqual(JSON.parse(call.options.body),{confirmKey:'testers',objectType:'requirement'});assert.equal(call.options.headers.get('X-DevFlow-Project'),'p-current')
+  const call=m.calls.find(call=>call.options.method==='DELETE');assert.equal(call.path,'/field-definitions/7');assert.deepEqual(JSON.parse(call.options.body),{confirmKey:'testers',objectType:'requirement'});assert.equal(call.options.headers.get('X-TaskLoom-Project'),'p-current')
   assert.deepEqual(m.items.value.map(item=>item.id),[8]);assert.equal(m.deleteTarget.value,null);assert.equal(m.noticeParams.value.count,12);assert.match(m.notice.value,/历史字段值/);assert.equal(m.missingCount.value,1);m.stop()
 })
 await test('pending deletion cannot duplicate, close, switch object, reload, or leave; failures keep confirmation',async()=>{

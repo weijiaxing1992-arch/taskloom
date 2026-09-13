@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -81,8 +82,9 @@ func (a *App) requirementAIRefine(w http.ResponseWriter, r *http.Request) {
 	a.requirementAIText(w, r, true)
 }
 
-// 两种文本生成共享权限、限流、配置版本与需求版本检查，不保存生成正文。
+// 两种文本生成共享权限、限流、配置版本与需求版本检查，不持久化生成正文。
 func (a *App) requirementAIText(w http.ResponseWriter, r *http.Request, refine bool) {
+	defect := r.URL.Path == "/api/ai/defect-refine"
 	if r.Method == http.MethodGet {
 		s, err := a.readAISettings(r.Context(), a.db)
 		if err != nil {
@@ -95,7 +97,7 @@ func (a *App) requirementAIText(w http.ResponseWriter, r *http.Request, refine b
 			failAI(w, permission)
 			return
 		}
-		write(w, 200, map[string]any{"configured": len(s.Encrypted) > 0, "enabled": s.Enabled, "model": s.Model, "canGenerate": permission == nil, "maxDescriptionLength": aiTitleDescriptionLimit, "maxTitleLength": aiTitleLengthLimit})
+		write(w, 200, map[string]any{"configured": len(s.Encrypted) > 0, "enabled": s.Enabled, "model": s.Model, "baseUrl": s.BaseURL, "canGenerate": permission == nil, "maxDescriptionLength": aiTitleDescriptionLimit, "maxTitleLength": aiTitleLengthLimit})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -103,11 +105,21 @@ func (a *App) requirementAIText(w http.ResponseWriter, r *http.Request, refine b
 		return
 	}
 	var input struct {
-		Description   string `json:"description"`
-		Confirmed     bool   `json:"confirmed"`
-		RequirementID *int64 `json:"requirementId"`
+		Description   string          `json:"description"`
+		Confirmed     bool            `json:"confirmed"`
+		RequirementID *int64          `json:"requirementId"`
+		ForceNew      json.RawMessage `json:"forceNew"`
 	}
 	if err := decodeOrganizationJSON(w, r, &input); err != nil {
+		failAI(w, err)
+		return
+	}
+	forceNew, err := aiForceNewOption(input.ForceNew)
+	if defect && input.RequirementID != nil {
+		fail(w, 400, "invalid_input", "缺陷优化仅接收当前草稿文字")
+		return
+	}
+	if err != nil {
 		failAI(w, err)
 		return
 	}
@@ -178,7 +190,21 @@ func (a *App) requirementAIText(w http.ResponseWriter, r *http.Request, refine b
 		}
 	}()
 	// No transaction or DB writer is held across the paid network request.
-	title, err := a.generateAIRequirementText(r.Context(), key, s.Model, input.Description, refine)
+	kind := "title"
+	if refine {
+		kind = "refinement"
+	}
+	if defect {
+		kind = "defect-refinement"
+	}
+	cacheKey := a.aiPreviewCacheKey(kind, s, version, map[string]any{"description": input.Description, "requirementId": input.RequirementID})
+	title, reused := "", false
+	if !forceNew {
+		title, reused = aiPreviews.get(cacheKey)
+	}
+	if !reused {
+		title, err = a.generateAIProfessionalText(r.Context(), key, s.Model, s.BaseURL, input.Description, refine, defect)
+	}
 	if err != nil {
 		failAI(w, err)
 		return
@@ -215,7 +241,7 @@ func (a *App) requirementAIText(w http.ResponseWriter, r *http.Request, refine b
 		if refine {
 			action = "ai_requirement_refined"
 		}
-		err = a.auditRequirementState(r.Context(), tx2, "ai_title_request", action, requestID, map[string]any{"model": s.Model, "requirementId": input.RequirementID})
+		err = a.auditRequirementState(r.Context(), tx2, "ai_title_request", action, requestID, map[string]any{"model": s.Model, "requirementId": input.RequirementID, "reused": reused})
 	}
 	if err == nil {
 		err = tx2.Commit()
@@ -225,10 +251,13 @@ func (a *App) requirementAIText(w http.ResponseWriter, r *http.Request, refine b
 		return
 	}
 	finished = true
+	if !reused {
+		aiPreviews.put(cacheKey, title)
+	}
 	if refine {
 		result, _ := parseAIRefinement(title)
-		write(w, 200, map[string]any{"preview": result, "model": s.Model})
+		write(w, 200, map[string]any{"preview": result, "model": s.Model, "reused": reused})
 		return
 	}
-	write(w, 200, map[string]string{"title": title, "model": s.Model})
+	write(w, 200, map[string]any{"title": title, "model": s.Model, "reused": reused})
 }

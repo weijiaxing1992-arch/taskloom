@@ -52,7 +52,7 @@ func unreadNotificationCount(t *testing.T, a *App, recipient string) int {
 func concurrentSprintRequest(handler http.Handler, cookie *http.Cookie, method, path, body string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)

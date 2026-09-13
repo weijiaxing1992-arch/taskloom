@@ -56,7 +56,7 @@ await test('mounted labels react to language but never translate configured cust
 })
 await test('authorized transitions are read-only discovery; selection resets to persisted status and emits only allowed destinations',async()=>{
   const m=await mount('RequirementTransition',{requirementId:10,status:'草稿',definitions:states});await flush()
-  assert.deepEqual(m.context.allowed,['custom_review']);assert.equal(m.calls[0].options.headers['X-DevFlow-Project'],'p-a')
+  assert.deepEqual(m.context.allowed,['custom_review']);assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'],'p-a')
   const input={value:'custom_review'};m.context.change({target:input});assert.equal(input.value,'草稿');assert.deepEqual(m.events,['custom_review'])
   m.context.change({target:{value:'done_custom'}});m.context.change({target:{value:'草稿'}});assert.equal(m.events.length,1)
   assert(m.calls.every(call=>!call.options.method));m.locale.value='en-US';await flush();assert.match(text(m.container),/Draft/);assert.match(text(m.container),/开发中/);assert.ok(!text(m.container).includes('In development'));m.stop()

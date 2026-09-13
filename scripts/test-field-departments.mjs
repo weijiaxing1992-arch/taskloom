@@ -55,6 +55,21 @@ await test('same-named departments remain distinct, while disabled picker cannot
   m.props.disabled=true;await flush();m.context.toggle('a');m.context.remove('b');m.context.addDepartment();await flush();assert.deepEqual(m.props.modelValue,['b']);m.stop()
 })
 const defs=[{id:1,key:'reviewer',name:'审核人员',type:'user',departmentId:'dept-front',enabled:true},{id:2,key:'reviewers',name:'审核小组',type:'users',departmentId:'dept-front',enabled:true},{id:3,key:'difficulty',name:'难度',type:'number',enabled:true}]
+await test('read-only, saving, loading and identity-invalid custom fields cannot emit writes',async()=>{
+  const m=await mount('CustomFieldInputs',{objectType:'requirement',modelValue:{reviewer:'front',difficulty:20},disabled:true},async path=>({items:path==='/members'?people:defs}))
+  await flush();m.context.set('reviewer','back');m.context.setNumber(defs[2],{target:{value:'50'}});assert.equal(m.emits.length,0)
+  m.props.disabled=false;await flush();m.context.setNumber(defs[2],{target:{value:'',validity:{badInput:true}}});assert.equal(m.emits.length,0);assert.equal(m.props.modelValue.difficulty,20)
+  m.context.set('reviewer','front');assert.equal(m.emits.length,1)
+  m.context.loading=true;await flush();m.context.set('reviewer','back');assert.equal(m.emits.length,1)
+  m.context.loading=false;m.window.dispatchEvent(new Event('devflow-identity-changed'));await flush();m.context.set('reviewer','back');assert.equal(m.emits.length,1);m.stop()
+})
+await test('personnel grouping separates user fields without changing saved values',async()=>{
+  const original={reviewer:'front',reviewers:['legacy'],difficulty:0}
+  const m=await mount('CustomFieldInputs',{objectType:'requirement',modelValue:original,visibleTypes:['user','users'],excludedKeys:['reviewer']},async path=>({items:path==='/members'?people:defs}))
+  await flush();assert.deepEqual(m.context.visibleDefs.map(x=>x.key),['reviewers']);assert.equal(m.emits.length,0)
+  m.props.visibleTypes=undefined;m.props.excludedTypes=['user','users'];await flush()
+  assert.deepEqual(m.context.visibleDefs.map(x=>x.key),['difficulty']);assert.deepEqual(m.props.modelValue,original);assert.equal(m.emits.length,0);m.stop()
+})
 await test('custom user inputs persist stable IDs, retain original names, and never emit while directory loads',async()=>{
   const m=await mount('CustomFieldInputs',{objectType:'requirement',modelValue:{reviewer:'旧姓名',reviewers:['legacy']}},async path=>({items:path==='/members'?people:defs}))
   await flush();assert.equal(m.calls.length,2);assert.equal(m.emits.length,0)
@@ -74,7 +89,7 @@ await test('project switch and identity loss invalidate late field/member reques
   const m=await mount('CustomFieldInputs',{objectType:'requirement',modelValue:{reviewer:'keep'}},async(path,options)=>{if(first){first=false;return old.promise}return {items:path==='/members'?people:defs}})
   m.storage.set('devflow-project','p-b');m.window.dispatchEvent(new Event('devflow-project-changed'));await flush();assert.equal(m.context.defs.length,3)
   old.resolve({items:[{id:99,key:'old',enabled:true,type:'text'}]});await flush();assert.equal(m.context.defs[0].id,1);assert.equal(m.emits.length,0)
-  assert.equal(m.calls.at(-1).options.headers['X-DevFlow-Project'],'p-b')
+  assert.equal(m.calls.at(-1).options.headers['X-TaskLoom-Project'],'p-b')
   m.window.dispatchEvent(new Event('devflow-identity-changed'));await flush();assert.equal(m.context.defs.length,0);assert.equal(m.context.members.length,0)
   const before=m.calls.length;await m.context.load();assert.equal(m.calls.length,before);assert.equal(m.props.modelValue.reviewer,'keep');m.stop()
 })

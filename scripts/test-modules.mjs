@@ -8,6 +8,8 @@ const root=fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const require=createRequire(root+'/package.json'),ts=require('typescript'),Vue=require('vue')
 const defectPeople={}
 new Function('exports',ts.transpileModule(readFileSync(`${root}/src/defectPeople.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(defectPeople)
+const myWorkEfficiency={}
+new Function('exports',ts.transpileModule(readFileSync(`${root}/src/myWorkEfficiency.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(myWorkEfficiency)
 function evaluate(name,exposed,handler=async()=>({items:[]}),initialQuery={}){
   const file=readFileSync(`${root}/src/views/${name}.vue`,'utf8'),source=file.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]
   const mounts=[],unmounts=[],calls=[],storage=new Map([['devflow-project','p-current']]),route=Vue.reactive({query:initialQuery}),language=Vue.ref('zh-CN'),location={href:''}
@@ -15,6 +17,7 @@ function evaluate(name,exposed,handler=async()=>({items:[]}),initialQuery={}){
   const api=async(path,options)=>{calls.push({path,options});return handler(path,options)}
   const imports={'../requirementWorkflow':workflow,vue:{...Vue,onMounted:fn=>mounts.push(fn),onBeforeUnmount:fn=>unmounts.push(fn)},'vue-router':{useRoute:()=>route,useRouter:()=>({replace:async x=>{route.query=x.query||{}},push:async()=>{}}),onBeforeRouteLeave:()=>{},onBeforeRouteUpdate:()=>{}},'../api':{api},'../components/settingsScope':{useSettingsScope:()=>({locked:Vue.ref(false),current:()=>true,request:api,project:'p-current'}),useSettingsDialog:()=>Vue.ref(null)},'../i18n':{t:x=>language.value==='en-US'?`en:${x}`:x,locale:language,formatDate:x=>String(x)}}
   imports['../defectPeople']=defectPeople
+  imports['../myWorkEfficiency']=myWorkEfficiency
   // Projects 的收藏布局按已验证租户/账户隔离；给旧视图评估器提供稳定作用域，
   // 使本套件继续验证模块行为，而不是绕过新的隐私缓存边界。
   imports['../layoutScope']={layoutScope:Vue.ref('tenant:user')}

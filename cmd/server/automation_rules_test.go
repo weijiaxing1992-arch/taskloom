@@ -443,11 +443,11 @@ func TestAutomationRuleRejectsInvisibleExplicitRecipient(t *testing.T) {
 func TestAutomationRuleNotificationLocalizesOnlySystemGrammar(t *testing.T) {
 	// 规则名称、需求编号和标题来自业务数据。英文通知只能翻译这一类事件
 	// 固定的连接语和内置状态，不能对自由文本做全局替换。
-	title, body := localizedNotification("en-US", "automation.requirement_status_changed", "自动化规则：研发交接 @原样保留", "REQ-0101 客户自定义：规划中 的状态已从「规划中」变更为「开发中」")
+	title, body := localizedNotification("en-US", "automation.requirement_status_changed", "自动化规则：研发交接 @原样保留", "000101 客户自定义：规划中 的状态已从「规划中」变更为「开发中」")
 	if title != "Automation rule: 研发交接 @原样保留" {
 		t.Fatalf("automation title localized unexpectedly: %q", title)
 	}
-	if body != "Status changed from “Planning” to “In development”: REQ-0101 客户自定义：规划中" {
+	if body != "Status changed from “Planning” to “In development”: 000101 客户自定义：规划中" {
 		t.Fatalf("automation body localized unexpectedly: %q", body)
 	}
 	// 不是自动化模板的内容（即便带有相似的中文片段）必须完全保留。

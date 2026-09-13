@@ -84,6 +84,9 @@ func (a *App) savedViewAccess(ctx context.Context, store stateStore) (bool, bool
 var savedViewCustomKey = regexp.MustCompile(`^cf\.[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,120}$`)
 
 func savedViewField(key string) bool {
+	if key == "iterationDelayCount" {
+		return true
+	}
 	if savedViewCustomKey.MatchString(key) {
 		return true
 	}

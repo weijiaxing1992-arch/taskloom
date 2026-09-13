@@ -392,6 +392,7 @@ func TestPublicInvitationRechecksAndConditionallyConsumesAfterWriteLock(t *testi
 }
 
 func TestOrganizationCSVPreviewCommitRevalidationAndExportSafety(t *testing.T) {
+	t.Setenv("DEVFLOW_INITIAL_PASSWORD", "")
 	a := testApp(t)
 	dep := orgDepartment(t, a, "导入部门", "IMPORT", nil)
 	csvText := "name,email,employeeNo,departmentCode,projectCode,projectRole\n=HYPERLINK(\"\"x\"\"),first-import@example.com,E1,IMPORT,ORBIT,frontend\n"
@@ -417,12 +418,12 @@ func TestOrganizationCSVPreviewCommitRevalidationAndExportSafety(t *testing.T) {
 	if result["imported"] != float64(1) {
 		t.Fatalf("import %v", result)
 	}
-	var active bool
+	var active, mustChange bool
 	var password, primary string
-	a.db.QueryRow(`SELECT active,password_hash FROM users WHERE email='first-import@example.com'`).Scan(&active, &password)
+	a.db.QueryRow(`SELECT active,password_hash,must_change_password FROM users WHERE email='first-import@example.com'`).Scan(&active, &password, &mustChange)
 	a.db.QueryRow(`SELECT dm.department_id FROM department_memberships dm JOIN users u ON u.id=dm.user_id WHERE u.email='first-import@example.com' AND dm.is_primary=1`).Scan(&primary)
-	if active || password != "" || primary != dep {
-		t.Fatal("import must create inactive passwordless canonical department member")
+	if active || password != "" || !mustChange || primary != dep {
+		t.Fatal("import must create an inactive canonical department member without a shared default password")
 	}
 	orgRequest(t, a, "POST", "/api/organization/members/import/commit", "u_admin", map[string]any{"previewId": preview["previewId"]}, 409)
 	w := apiRequest(a, "GET", "/api/organization/members/export", "u_admin", "missing", "")

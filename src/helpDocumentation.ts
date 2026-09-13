@@ -6,6 +6,7 @@ export type HelpDocument = HelpDocumentSource & { sections: HelpSection[] }
 export const documentRoutes: Record<string, string> = {
   'product-handbook.md': '/help/guide', 'api-reference.md': '/help/api',
   'internal-api-reference.md': '/help/internal-api', 'ai-collaboration.md': '/help/ai',
+  'ai-release-notes.md': '/help/release-notes',
   'maintenance-zh.md': '/help/operations', 'openapi.json': '/help/api',
 }
 

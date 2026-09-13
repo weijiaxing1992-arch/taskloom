@@ -5,6 +5,11 @@
 .code-reading pre,.rich-editor .tiptap .code-reading pre{margin:0!important;padding:12px 14px!important;border:0!important;border-radius:0!important;background:transparent!important;color:inherit!important;overflow:auto;max-height:560px;white-space:pre!important;tab-size:4;font:13px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace!important}
 .code-reading pre code{padding:0!important;background:none!important;color:inherit!important;font:inherit!important;white-space:inherit!important}
 .code-reading.code-wrap pre,.rich-editor .tiptap .code-reading.code-wrap pre{white-space:pre-wrap!important;overflow-wrap:anywhere}
+/* NodeViewContent 默认内联 pre-wrap，会覆盖外层 pre；显式继承才能保持缩进及横向滚动。 */
+.code-reading [data-node-view-content]{display:block;min-width:100%;width:max-content;box-sizing:border-box;white-space:inherit!important;overflow-wrap:normal;word-break:normal}
+.code-reading.code-wrap [data-node-view-content]{min-width:0;width:auto;overflow-wrap:anywhere}
+.code-reading pre{min-width:0;max-width:100%;box-sizing:border-box;overscroll-behavior-inline:contain;overflow-wrap:normal;word-break:normal}
+.code-reading-tools{white-space:normal;min-width:0;max-width:100%}.code-reading-tools>*{max-width:100%;overflow-wrap:anywhere}
 .code-plain-text{white-space:pre-wrap;overflow-wrap:anywhere}.code-text-view,.code-text-editor{min-width:0;max-width:100%;width:100%}.code-copy-status{font-size:12px;color:var(--muted,#687182)}
 .code-text-editor textarea{width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:4}.code-insert-tools{min-width:0;max-width:100%;margin-top:4px}.code-insert-tools>.code-reading-tools{border:1px solid var(--border,#dfe3eb);border-radius:4px}
 .code-reading .hljs-keyword,.code-reading .hljs-selector-tag,.code-reading .hljs-meta{color:#a626a4}.code-reading .hljs-string,.code-reading .hljs-regexp,.code-reading .hljs-attr{color:#28723e}.code-reading .hljs-comment,.code-reading .hljs-quote{color:#687687;font-style:italic}.code-reading .hljs-title,.code-reading .hljs-built_in,.code-reading .hljs-name{color:#075fa6}.code-reading .hljs-number,.code-reading .hljs-literal,.code-reading .hljs-variable{color:#a34d0b}

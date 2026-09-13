@@ -114,8 +114,23 @@ func (a *App) auditRequirementResource(tx *sql.Tx, requirementID, resourceID int
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO activities(tenant_id,project_id,requirement_id,actor,event,detail,created_at)VALUES(?,?,?,?,?,?,?)`, tenantID, a.pid(), requirementID, a.uid(), action, jsonText(map[string]any{"resourceId": resourceID, "type": typ}), now)
-	return err
+	actor := a.uid()
+	if err = tx.QueryRow(`SELECT name FROM users WHERE tenant_id=? AND id=?`, tenantID, a.uid()).Scan(&actor); err != nil {
+		return err
+	}
+	activity, err := tx.Exec(`INSERT INTO activities(tenant_id,project_id,requirement_id,actor,event,detail,created_at)VALUES(?,?,?,?,?,?,?)`, tenantID, a.pid(), requirementID, actor, action, jsonText(map[string]any{"resourceId": resourceID, "type": typ}), now)
+	if err != nil {
+		return err
+	}
+	activityID, err := activity.LastInsertId()
+	if err != nil {
+		return err
+	}
+	key := "attachment"
+	if typ == "requirement_design_link" {
+		key = "designLink"
+	}
+	return a.recordRequirementRelatedHistory(tx, activityID, requirementID, key, before, after)
 }
 
 func failRequirementResource(w http.ResponseWriter, err error) {

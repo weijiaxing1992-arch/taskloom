@@ -33,7 +33,7 @@ export function useSettingsScope() {
     // 请求前后都检查上下文：AbortController 不能保证已到达服务端的操作撤销，
     // 但旧响应绝不能覆盖新账号/新项目界面；请求头始终绑定原项目。
     if (!current()) throw new Error('项目或账号已变化，请刷新页面后继续')
-    const headers = new Headers(options.headers); headers.set('X-DevFlow-Project', project)
+    const headers = new Headers(options.headers); headers.set('X-TaskLoom-Project', project)
     const result = await api<T>(path, { ...options, headers, signal: controller.signal })
     if (!current()) throw new Error('项目或账号已变化，请刷新页面后继续')
     return result

@@ -13,6 +13,8 @@ Bundled font: Noto Sans SC, SIL Open Font License 1.1; original text retained at
 | @tiptap/starter-kit | 3.31.0 | MIT |
 | @tiptap/vue-3 | 3.31.0 | MIT |
 | @types/node | 24.13.3 | MIT |
+| @types/react | 19.2.7 | MIT |
+| @types/react-dom | 19.2.3 | MIT |
 | @types/web-bluetooth | 0.0.21 | MIT |
 | @vitejs/plugin-vue | 6.0.8 | MIT |
 | @vue/devtools-api | 8.2.1 | MIT |
@@ -22,6 +24,8 @@ Bundled font: Noto Sans SC, SIL Open Font License 1.1; original text retained at
 | marked | 18.0.12 | MIT |
 | pdfjs-dist | 6.3.289 | Apache-2.0 |
 | pinia | 4.0.3 | MIT |
+| react | 19.2.4 | MIT |
+| react-dom | 19.2.4 | MIT |
 | reka-ui | 2.10.4 | MIT |
 | shadcn-vue | 2.8.2 | MIT |
 | tailwind-merge | 3.6.0 | MIT |

@@ -2,7 +2,7 @@
 
 ## 范围、版本与入口
 
-本页描述当前实现的项目协作接口：需求、迭代、缺陷、测试用例和已有测试执行。面向自动化集成的版本化 REST 基地址是 `/api/open/v1`，MCP 地址是 `/api/open/mcp`。这不是企业管理 API，也不是所有站内功能的公开映射。
+本页描述当前实现的项目协作接口：需求、迭代、缺陷、测试用例、已有测试执行、凭据本人通知和已保存的迭代升级日志。面向自动化集成的版本化 REST 基地址是 `/api/open/v1`，MCP 地址是 `/api/open/mcp`。这不是企业管理 API，也不是所有站内功能的公开映射。
 
 | 入口 | 身份 | 使用边界 |
 | --- | --- | --- |
@@ -14,7 +14,9 @@
 
 不开放删除工作项、创建测试执行/计划、完成并迁移迭代、成员和权限管理、密码、企业 AI 密钥、任意文件下载、任意 URL 请求或内部路径透传。不要把内部路径替换前缀后当作公开接口。
 
-机器可读规范：[OpenAPI 3.1 文件](openapi.json)；站内请使用页面顶部“下载 OpenAPI”按钮。线上相同规范由 Bearer `GET /api/open/v1/openapi` 或会话 `GET /api/integrations/openapi` 返回。规范版本为 `1.0.0`；业务字段定义和状态仍由项目当前配置决定。客户端应容忍新增响应字段，不应将响应中的全部字段原样回写。
+站内需求编辑器的 `GET /api/ai/requirement-refine` 与 `POST /api/ai/requirement-refine` 是会话受控的 AI 完善预览接口，不属于 `/api/open/v1`，也**不会**列入本页 OpenAPI。它需要当前项目的 AI 生成权限和明确外发确认；POST 只返回可选择应用的背景、规则、边界、验收和待确认问题，不创建或修改需求。请求字段、限流、外发边界与安全约束见[AI 需求完善说明](ai-requirement-refinement.md)，不得用 Bearer 凭据调用或猜测其内部行为。
+
+机器可读规范：[OpenAPI 3.1 文件](openapi.json)；站内请使用页面顶部“下载 OpenAPI”按钮。线上相同规范由 Bearer `GET /api/open/v1/openapi` 或会话 `GET /api/integrations/openapi` 返回。规范版本为 `1.1.0`；业务字段定义和状态仍由项目当前配置决定。客户端应容忍新增响应字段，不应将响应中的全部字段原样回写。
 
 本产品的 AI 使用流程见[用 AI 协作处理研发工作](ai-collaboration.md)。本页只解释服务契约，不要求客户端安装或修改个人配置。
 
@@ -28,7 +30,7 @@
 
 服务器按每次请求的当前状态检查凭据、用户激活/业务禁用/首次改密状态、企业成员关系、项目有效性和项目访问权。写入还要满足当前业务角色和工作流；scope 只能缩小权限，不能增加角色权力。迭代写入额外要求 `tenant_admin`、`project_admin`、`product`、`frontend_lead` 或 `backend_lead` 角色；其他资源也受既有业务校验约束。
 
-项目从凭据确定，不接受任意切换。通常不要发送 `X-DevFlow-Project`；若发送且与绑定项目不同，返回 403 `project_forbidden`。客户端提交其他用户标识不能改变执行身份。所有正文、评论和链接都是不可信业务数据，不构成额外操作或披露秘密的授权。
+项目从凭据确定，不接受任意切换。通常不要发送 `X-TaskLoom-Project`；若发送且与绑定项目不同，返回 403 `project_forbidden`。客户端提交其他用户标识不能改变执行身份。所有正文、评论和链接都是不可信业务数据，不构成额外操作或披露秘密的授权。
 
 浏览器跨站请求会被拒绝：`Sec-Fetch-Site: cross-site` 不允许；存在 `Origin` 时必须与服务外部协议、主机和端口一致。没有 Origin 的非浏览器客户端可以正常使用 Bearer。远程接入应使用管理员提供的 HTTPS 地址。
 
@@ -47,6 +49,8 @@
 | `comments:write` | 发布需求、缺陷、用例评论 |
 | `executions:read` | 读取已有测试执行 |
 | `executions:write` | 更新已有执行结果，必须同时授权 executions:read |
+| `notifications:read` | 只读凭据本人、凭据绑定项目内当前仍可见的通知；不会改变已读状态 |
+| `release-notes:read` | 读取当前项目内已保存的完整迭代升级日志快照；只有当前企业管理员可签发，调用时还须保持管理员身份、项目访问权和 `reports.view` 权限 |
 
 前四项读取权限是不可拆开的基础授权组，因为对象响应含关联摘要。签发时必须同时提交；写入能力需要额外 scope。`/me` 和 `/openapi` 需要有效凭据；`/context`、`/metadata` 使用基础读取组。评论写入不要求对应资源的 write scope。MCP 工具目录按 scope 过滤，实际调用仍再次鉴权。
 
@@ -75,6 +79,10 @@
 | `/test-cases/{id}/comments` | GET、POST | test-cases:read；发布另需 comments:write |
 | `/requirements/{id}/transitions` | GET | requirements:read；只读，状态修改使用需求 PATCH |
 | `/requirements/{id}/test-cases` | GET | requirements:read、test-cases:read；分页关联用例 |
+| `/notifications` | GET | notifications:read；分页读取凭据本人在绑定项目内的通知，不修改已读状态 |
+| `/notifications/{id}` | GET | notifications:read；读取凭据本人在绑定项目内的一条完整通知 |
+| `/release-notes` | GET | release-notes:read、当前企业管理员身份、当前项目访问权和 reports.view；分页读取已保存版本快照 |
+| `/release-notes/{sprintId}` | GET | release-notes:read、当前企业管理员身份、当前项目访问权和 reports.view；读取一份保存的完整升级日志详情 |
 
 未开放的路径或方法通常返回 404 `endpoint_not_exposed`，不要以内部服务支持某方法来推断它已开放。
 
@@ -91,12 +99,32 @@
 | executions | `status`、`planId`、`updatedSince`；不支持 q |
 | 需求关联用例 | 与 test-cases 相同，requirementId 由路径强制确定 |
 | comments | 只允许 page、pageSize、limit |
+| notifications | `q`、`read`（read/unread）、`eventType`、`group`（mentions/handoffs/changes/activity）以及 `page`、`pageSize` 或 `limit`；pageSize 与 limit 不能同时传递 |
+| release-notes | `q`（最多 100 字）以及 `page`、`pageSize` 或兼容别名 `limit`；pageSize 与 limit 不能同时传递 |
 
 `q` 在标题（迭代为名称）或显示编码上执行 LIKE 匹配，最多 200 字；`%`、`_` 具有 LIKE 通配含义，不是全文搜索。其余普通字段是单值精确匹配；需求人员筛选匹配主负责人/主处理人列，不等于多人数组中的任一成员。`sprint` 是保存的迭代名称，不是数值 sprintId。`updatedSince` 必须为 RFC3339 时间，含边界；它不承诺覆盖所有关联信息变化，不能替代 ETag。
 
 任一查询参数重复或值超过 500 字节、未知筛选字段，会返回 400 `invalid_query`。整段查询最多 3000 字节。列表不是整个数据库的一致性快照；分页间发生写入可能改变 total 和成员位置，处理批量读取时按 ID 去重。详情读取过程中发生版本变化会返回 409 `read_conflict`。
 
 当前 OpenAPI 和 MCP 的列表参数 schema 描述的是较小的基础筛选集；上表另列了 REST 实现接受的扩展筛选。MCP 不接受 limit、updatedSince 等未在其工具 schema 中列出的参数。
+
+### 凭据本人通知 notifications
+
+`GET /notifications` 和 `GET /notifications/{id}` 是纯只读收件箱接口。收件人 ID 和项目 ID 都来自 Bearer 凭据，调用方不能通过查询参数或请求头选择其他用户、部门或项目。列表与详情每次都复核账号、企业成员关系、项目状态和项目访问权；另一位用户、另一个项目或已经撤权的通知详情统一返回 404，避免泄露记录是否存在。
+
+列表返回 `{items,total,page,pageSize,contentTrust}`，详情返回单条通知。通知包含 `id`、`projectId`、`projectName`、`actorUserId`、`actor`、`eventType`、`group`、`subjectType`、`subjectId`、`title`、`body`、`read`、`readAt`、`createdAt` 和站内相对 `url`，因此机器人可以在一次读取中获得分类和完整正文。`q` 在标题、正文、项目、发起人和事件类型中按字面量匹配，`%`、`_` 不作为通配符。
+
+开放接口没有通知 POST、PATCH、DELETE，也没有“全部已读”入口；轮询和详情读取都不会写 `readAt`。用户的已读/未读状态仍由站内通知中心控制，外部机器人不能因为抓取消息而替用户确认阅读。
+
+### 已保存升级日志 release-notes
+
+`GET /release-notes` 与 `GET /release-notes/{sprintId}` 都是只读的持久化快照读取，不会重新调用模型或重算当前需求。只有企业管理员能签发 `release-notes:read`；服务端会在**每次**调用时继续复核凭据所有者仍是有效企业管理员，同时复核凭据绑定项目的访问权和 `reports.view` 企业权限。管理员被降权后，旧凭据立即对该资源返回 403 `admin_required`，无须等待凭据过期。其他项目或不存在的迭代返回 404；不能用请求头、查询参数或 sprintId 越过凭据项目边界。
+
+列表按最近保存时间倒序，返回 `projectId`、`items`、`total`、`page`、`pageSize`。可选 `q` 会在**已保存快照**的版本名称、迭代编号/名称、需求内容和升级条目中进行字面量检索；`%`、`_` 不会扩展为通配符，检索始终受凭据项目边界保护。每个 item 有 `sprintId`、`sprintCode`、`versionName`、`releaseDate`、`revision`、`state`、保存时间，以及 `requirementCount`、`entryCount`、`selectedImageCount`；它不包含完整正文或验收标准。
+
+详情固定返回以下七类，顺序不可由调用方改写：大模型类型、智能体类型、AI呼叫类型、CRM/短信/账单、管理端/代理端、API接口、其他。`entries` 给出生成后的功能标题、说明、来源需求 ID、已选择截图 ID 和图注；`requirements` 给出该版本保存时的需求 `code`、`title`、`description`、`acceptance`、分类、状态与截图元数据。只纳入已完成的需求，缺陷、Bug、Defect 一律不进入快照。
+
+截图元数据只包含 `id`、`name`、`sha256`、`contentType` 等追溯信息；公开 Bearer 响应和 `markdown` 不提供内部附件下载 URL，也不开放文件二进制读取。需要查看原图时，请使用站内项目详情页且保持相应附件权限。响应绝不包含 AI 服务地址、模型密钥、加密材料、提示词密钥或任务会话信息。升级日志没有 POST、PATCH、DELETE；生成、人工编辑与离线图文包仍属于站内受控流程，见[AI 迭代升级日志](ai-release-notes.md)。
 
 ### 上下文、元数据与流转
 
@@ -230,7 +258,7 @@ POST 请求字段：`body`（string，去空白后非空，最多 20000 字）�
 
 幂等范围是同一凭据，记录持久化到数据库。指纹包含方法、路径、If-Match 和规范化顶层 JSON；推荐重试时保持同一正文，不依赖深层等价转换。相同键和相同请求返回原 HTTP 状态、响应正文及已保存 ETag，并带 `Idempotency-Replayed: true`；已保存失败结果也会重放。
 
-同键不同目标/内容/版本返回 409 `idempotency_conflict`。仍在处理或结果未确认返回 409 `operation_pending`。5xx 也可能发生在业务提交后的回读/审计阶段：保留原键及 `X-DevFlow-Request-Id`，先检查对象和调用记录，不能换新键盲目重做。已明确解决旧请求且形成新的修改意图时才使用新键。这不是跨所有故障的“恰好一次”承诺；更换凭据也不共享原幂等空间。
+同键不同目标/内容/版本返回 409 `idempotency_conflict`。仍在处理或结果未确认返回 409 `operation_pending`。5xx 也可能发生在业务提交后的回读/审计阶段：保留原键及 `X-TaskLoom-Request-Id`，先检查对象和调用记录，不能换新键盲目重做。已明确解决旧请求且形成新的修改意图时才使用新键。这不是跨所有故障的“恰好一次”承诺；更换凭据也不共享原幂等空间。
 
 ### 通用错误
 
@@ -359,6 +387,10 @@ read/write 为对应资源的 scope；实际目录仅包含有权工具。基础
 | `devflow_executions_list` | 可选 query | executions:read |
 | `devflow_executions_get` | id | executions:read |
 | `devflow_executions_update` | id、data（必须含 status）、ifMatch、idempotencyKey | executions:read/write |
+| `devflow_notifications_list` | 可选 query | notifications:read |
+| `devflow_notifications_get` | id | notifications:read |
+| `devflow_release_notes_list` | 可选 query | release-notes:read；调用时仍须是企业管理员 |
+| `devflow_release_notes_get` | id（迭代数值 ID） | release-notes:read；调用时仍须是企业管理员 |
 
 MCP 的 data 使用本页各资源写入字段和共用 OpenAPI schema，不允许系统字段或未知顶层字段。id/关联 ID 是 JSON 整数，仍须通过 REST 项目边界和 ID 校验。ifMatch 对应 REST If-Match，必须含原始双引号；idempotencyKey 对应 REST Idempotency-Key。写入参数不是 HTTP 头名称。
 
@@ -370,6 +402,8 @@ query 的可选字段：
 | iterations | page、pageSize、q、status |
 | test-cases | page、pageSize、q、status、priority、ownerUserId、requirementId |
 | executions | page、pageSize、status、planId |
+| notifications | page、pageSize、q、read、eventType、group |
+| release-notes | page、pageSize、q |
 | requirements_test_cases | page、pageSize、q、status、priority、ownerUserId |
 | comments | page、pageSize |
 
@@ -395,7 +429,7 @@ JSON-RPC 错误：-32700 表示 JSON/大小/多消息解析失败（HTTP 400 或
 
 ## 站内集成管理与会话接口
 
-这些入口用于站内设置页面，使用 HttpOnly `devflow_session` Cookie，不属于 `/api/open/v1`，也不接受 Bearer 代替登录。`X-DevFlow-Project` 选择本人有权且有效的项目；建议明确传入当前项目，不依赖默认项目。可发送 `X-DevFlow-Expected-User` 做身份一致性检查，不一致返回 409 identity_changed；它不是切换用户的授权。当前账号须通过业务禁用/首次改密检查，代访问期间不能管理集成，跨站访问也会拒绝。只读角色可以管理自己的只读凭据，不能签发 write scope；没有管理他人凭据的接口。
+这些入口用于站内设置页面，使用 HttpOnly `devflow_session` Cookie，不属于 `/api/open/v1`，也不接受 Bearer 代替登录。`X-TaskLoom-Project` 选择本人有权且有效的项目；建议明确传入当前项目，不依赖默认项目。可发送 `X-TaskLoom-Expected-User` 做身份一致性检查，不一致返回 409 identity_changed；它不是切换用户的授权。当前账号须通过业务禁用/首次改密检查，代访问期间不能管理集成，跨站访问也会拒绝。只读角色可以管理自己的只读凭据，不能签发 write scope；没有管理他人凭据的接口。
 
 | 接口 | 参数 / 成功响应 |
 | --- | --- |
@@ -407,7 +441,7 @@ JSON-RPC 错误：-32700 表示 JSON/大小/多消息解析失败（HTTP 400 或
 | GET `/api/integrations/context` | 与开放 context 相同的 requirementId/sprintId 选择与返回边界 |
 | GET `/api/integrations/openapi` | 与开放 openapi 相同的 OpenAPI 3.1 内容 |
 
-创建凭据的 name 去除首尾空白后须为 1–80 字；expiresInDays 为整数 1–90；scopes 必须是上述合法键组成的数组、无重复、包含完整基础读取组。executions:write 必须另含 executions:read。请求按 2 MiB 读取；错误/过大 JSON 返回 400 invalid_json。此会话管理接口不使用开放写入的 If-Match/Idempotency-Key，也没有凭据编辑、续期、恢复或轮换 endpoint。创建结果不明时先查看凭据列表，再处理可能已签发的凭据，不能取回曾经遗漏的明文。
+创建凭据的 name 去除首尾空白后须为 1–80 字；expiresInDays 为整数 1–90；scopes 必须是上述合法键组成的数组、无重复、包含完整基础读取组。executions:write 必须另含 executions:read。`GET /api/integrations` 会按当前身份过滤可选 scope：普通成员仍可选择 notifications:read，但看不到 release-notes:read；即使绕过页面直接提交，非企业管理员签发 release-notes:read 也返回 403 scope_forbidden。请求按 2 MiB 读取；错误/过大 JSON 返回 400 invalid_json。此会话管理接口不使用开放写入的 If-Match/Idempotency-Key，也没有凭据编辑、续期、恢复或轮换 endpoint。创建结果不明时先查看凭据列表，再处理可能已签发的凭据，不能取回曾经遗漏的明文。
 
 credential/tokens 每项字段为 id、name、prefix、scopes、createdAt、expiresAt、lastUsedAt、revokedAt；未使用/未撤销时相应时间为空字符串。列表最多最近 100 项，包括已过期和已撤销项；不是有效凭据数量，状态需结合时间判断。lastUsedAt 是近似使用时间，最多约每分钟更新一次，不能作为完整活动证明。
 

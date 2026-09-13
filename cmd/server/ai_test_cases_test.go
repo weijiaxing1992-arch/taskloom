@@ -297,8 +297,8 @@ func TestAIRateLimitAndCancellation(t *testing.T) {
 		aiGenerate(t, a, x)
 	}
 	w := apiRequest(a, "POST", fmt.Sprintf("/api/requirements/%d/ai-test-cases", x.ID), "u_admin", projectID, jsonText(map[string]any{"confirmed": true, "requirementUpdatedAt": x.UpdatedAt}))
-	if w.Code != 429 || calls != 5 {
-		t.Fatal("rate limit not enforced before provider")
+	if w.Code != 429 || calls != 1 || tableCount(t, a, "ai_test_case_drafts") != 5 {
+		t.Fatalf("cache hits must reserve quota and the sixth request must be rejected: status=%d provider calls=%d", w.Code, calls)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -251,7 +251,7 @@ func TestBootstrapCollisionScopeAndAuditFailuresRollBackEverything(t *testing.T)
 			case "project-archived":
 				db.Exec(`UPDATE projects SET status='archived' WHERE id='project'`)
 			case "duplicate-email":
-				db.Exec(`UPDATE users SET email='WEIJIAXING@TELROBOT.TOP' WHERE id='u_bob'`)
+				db.Exec(`UPDATE users SET email='ADMIN@EXAMPLE.COM' WHERE id='u_bob'`)
 			case "duplicate-name":
 				db.Exec(`UPDATE users SET name='New Person' WHERE id='u_bob'`)
 			case "wrong-user-id":

@@ -20,6 +20,7 @@ function evaluate(sourceText, imports, globals) {
   return exports
 }
 const auditDictionary = evaluate(read('src/locales/audit.en.ts'), {}, {}).default
+const auditLabels = evaluate(read('src/auditHistory.ts'), {}, {})
 const flush = async () => { for (let index = 0; index < 16; index++) { await Promise.resolve(); await Vue.nextTick() } }
 const example = (id, objectId = '7') => ({ id, actorId: 'u_admin', actorName: '林夏', objectType: 'requirement', objectId, action: 'requirement.updated', createdAt: '2026-09-04T10:00:00Z', changes: [{ field: '标题', before: '旧标题', after: '新标题' }], changesTrimmed: false })
 
@@ -31,6 +32,7 @@ async function mount(handler) {
     '../api': { api: async (path, options) => { calls.push({ path, options }); return handler(path, options) } },
     '../i18n': { locale, t: (value, params = {}) => String(value).replace(/\{(\w+)\}/g, (all, key) => String(params[key] ?? all)), formatDate: value => String(value || '') },
     '../components/AppSelect.vue': { default: Vue.defineComponent({ name: 'AppSelect', props: ['modelValue', 'options', 'label'], emits: ['update:modelValue'], setup: () => () => Vue.h('div') }) },
+    '../auditHistory': auditLabels,
   }
   const component = evaluate(script.content, imports, { window }).default
   let context
@@ -50,11 +52,50 @@ await test('audit view compiles and exposes constrained project-history controls
   assert.match(source, /type="date"/)
   assert.match(source, /@submit\.prevent="submitFilters"/)
   assert.match(source, /objectLink\(item\)/)
+  assert.match(source, /auditActionLabel\(item\.action, item\.objectType\)/)
+  assert.match(source, /function objectLabel\(value: string\) \{ return t\(auditObjectLabel\(value\)\) \}/)
+  assert.match(source, /auditFieldLabel\(value\)/)
+  assert.match(source, /class="audit-trace"/)
+  assert.doesNotMatch(source, /item\.actorId \|\| t\('系统事件'\)/)
+  assert.doesNotMatch(source, /:title="item\.action"/)
   assert.match(source, /if \(!\/\^\[1-9\]\\d\*\$\//)
   assert.match(source, /@media\(max-width:760px\)/)
   assert.match(read('src/main.ts'), /path:'\/audit',component:AuditLog/)
   for (const match of source.matchAll(/\bt\((['"])([^'"\n]*)\1/g)) if (/[\u3400-\u9fff]/.test(match[2])) assert.ok(auditDictionary[match[2]], `AuditLog locale missing ${match[2]}`)
   for (const key of ['需求', '缺陷', '迭代', '测试用例', '测试计划', '测试执行', '项目', '成员', '自动化规则', '自定义字段', 'AI 服务配置', '需求分类', '需求状态', '需求工作流']) assert.ok(auditDictionary[key], `Audit object locale missing ${key}`)
+})
+
+await test('opaque audit action codes render as stable, readable operation names', () => {
+  const label = auditLabels.auditActionLabel
+  const cases = [
+    ['requirement.description_saved', 'requirement', '保存需求正文'],
+    ['impersonation_stopped', 'user', '结束代访问'],
+    ['organization_member_saved', 'user', '保存成员资料'],
+    ['release_notes_generate', 'sprint', '生成升级日志'],
+    ['created', 'requirement', '创建需求'],
+    ['unknown.internal_event', 'unknown', '系统操作'],
+  ]
+  for (const [action, objectType, expected] of cases) {
+    assert.equal(label(action, objectType), expected)
+    assert.ok(auditDictionary[expected], `audit action locale missing ${expected}`)
+  }
+})
+
+await test('technical audit identifiers are converted to business labels and stay traceable only on demand', () => {
+  assert.equal(auditLabels.auditObjectLabel('comment'), '评论')
+  assert.equal(auditLabels.auditObjectLabel('requirement_attachment'), '需求附件')
+  assert.equal(auditLabels.auditObjectLabel('wecom_custom_app'), '企业微信自建应用')
+  assert.equal(auditLabels.auditObjectLabel('unknown_internal_type'), '其他记录')
+  assert.equal(auditLabels.auditActionLabel('comment.rich_created', 'comment'), '创建评论')
+  assert.equal(auditLabels.auditActionLabel('attachment.uploaded', 'requirement_attachment'), '上传附件')
+  assert.equal(auditLabels.auditActionLabel('project.delete', 'project'), '删除项目')
+  assert.equal(auditLabels.auditActorFallbackLabel('u_admin'), '管理员账户')
+  assert.equal(auditLabels.auditActorFallbackLabel('admin-credentials-cli'), '系统维护任务')
+  assert.equal(auditLabels.auditActorFallbackLabel('unmapped_account'), '未知操作成员')
+  assert.equal(auditLabels.auditFieldLabel('requirementId'), '需求编号')
+  assert.equal(auditLabels.auditFieldLabel('member.name'), '成员资料 · 名称')
+  assert.equal(auditLabels.auditFieldLabel('internalProtocolField'), '配置项')
+  for (const key of ['评论', '需求附件', '企业微信自建应用', '其他记录', '管理员账户', '系统维护任务', '未知操作成员', '查看追溯信息', '操作账号标识', '对象标识', '操作标识']) assert.ok(auditDictionary[key], `audit trace locale missing ${key}`)
 })
 
 await test('filters, stable cursor pagination, safe deep links and identity clearing work in the rendered view', async () => {

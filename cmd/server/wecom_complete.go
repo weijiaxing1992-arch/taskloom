@@ -154,6 +154,9 @@ func (a *App) wecomSubjectSummary(ctx context.Context, subject string, id int64,
 	if err != nil {
 		return "", err
 	}
+	if subject == "requirement" {
+		code = requirementDisplayCode(id, code)
+	}
 	result := fmt.Sprintf("关联事项：%s %s\n发送时状态：%s", code, title, status)
 	if priority != "" {
 		result += "\n优先级：" + priority

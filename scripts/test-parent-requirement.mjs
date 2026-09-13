@@ -22,7 +22,7 @@ function fixture(handler = async path => path === '/requirements/7' ? parent() :
 let count = 0; async function test(name, run) { await run(); count++; console.log('✓ ' + name) }
 await test('saved child loads its exact parent by stable ID and verified project header, never from a truncated list', async () => {
  const m = fixture(); await m.loadParent(m.selected.value)
- assert.equal(m.calls[0].path, '/requirements/7'); assert.equal(m.calls[0].options.headers['X-DevFlow-Project'], 'p'); assert.equal(m.calls.length, 1)
+ assert.equal(m.calls[0].path, '/requirements/7'); assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'], 'p'); assert.equal(m.calls.length, 1)
  assert.equal(m.parentSummary.value.id, 7); assert.equal(m.parentSummary.value.title, 'Original parent title'); assert.equal(m.parentLoading.value, false); m.stop()
 })
 await test('parent access keeps the iteration path and all unrelated query context', async () => {

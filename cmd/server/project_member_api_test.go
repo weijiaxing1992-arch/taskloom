@@ -45,7 +45,7 @@ func TestProjectMemberCandidatesPreserveLegacyReadAndProtectEnterpriseDirectory(
 		t.Fatal("foreign or removed candidate leaked")
 	}
 	for _, item := range items {
-		if len(item) != 6 {
+		if len(item) != 7 {
 			t.Fatalf("unexpected sensitive candidate field: %v", item)
 		}
 	}
@@ -168,7 +168,7 @@ func TestProjectMemberRemovalImmediatelyRevokesOnlyTargetProjectAccess(t *testin
 		status  int
 	}{{projectID, 403}, {insightProjectID, 200}} {
 		r := httptest.NewRequest("GET", "/api/requirements", nil)
-		r.Header.Set("X-DevFlow-Project", tc.project)
+		r.Header.Set("X-TaskLoom-Project", tc.project)
 		r.AddCookie(cookie)
 		w := httptest.NewRecorder()
 		a.scopedAPI().ServeHTTP(w, r)

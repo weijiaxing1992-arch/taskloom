@@ -13,9 +13,12 @@ async function load(){loading.value=true;try{const [members,session]=await Promi
 onMounted(load)
 async function save(){if(saving.value)return;error.value='';saving.value=true;try{await api('/members',{method:'POST',body:JSON.stringify(form)});show.value=false;Object.assign(form,{name:'',email:'',employeeNo:'',initialPassword:''});await load()}catch(cause){error.value=message(cause)}finally{saving.value=false}}
 async function patch(x:any,p:any){if(saving.value)return;error.value='';saving.value=true;try{await api('/members',{method:'PATCH',body:JSON.stringify({id:x.id,...p})});await load()}catch(cause){error.value=message(cause)}finally{saving.value=false}}
-function prepareImpersonation(member:any){impersonating.value=member;reason.value=defaultImpersonationReason;error.value=''}
+function canImpersonateMember(member:any){return !!member&&context.value?.canImpersonate===true&&!context.value?.impersonation&&member.active&&member.id!==context.value?.user?.id&&!member.isCurrent}
+function validImpersonationReason(value:string){const length=Array.from(value.trim()).length;return length>=4&&length<=500}
+function prepareImpersonation(member:any){if(!canImpersonateMember(member)||saving.value)return;impersonating.value=member;reason.value=defaultImpersonationReason;error.value=''}
+function closeImpersonation(){if(saving.value)return;impersonating.value=null;reason.value='';error.value=''}
 async function startImpersonation(){
- if(saving.value||!impersonating.value)return
+ if(saving.value||!canImpersonateMember(impersonating.value)||!validImpersonationReason(reason.value))return
  error.value='';saving.value=true
  try{const result=await api<any>('/auth/impersonation',{method:'POST',body:JSON.stringify({userId:impersonating.value.id,reason:reason.value.trim()})});localStorage.setItem('devflow-project',result.projectId);location.href='/my-work'}catch(cause){error.value=message(cause)}finally{saving.value=false}
 }
@@ -109,13 +112,13 @@ async function startImpersonation(){
 <td>{{formatDate(x.lastActive)}}</td>
 <td>
 <button class="link" :disabled="x.isCurrent || saving" @click="patch(x,{active:!x.active})">{{x.active?t("停用"):t("启用")}}</button>
-<button v-if="context?.canImpersonate && !x.isCurrent" class="link member-login" :disabled="!x.active || saving" @click="prepareImpersonation(x)">{{t('代访问账号')}}</button>
+<button v-if="context?.canImpersonate && !x.isCurrent" class="link member-login" :disabled="!canImpersonateMember(x) || saving" :title="t(x.mustChangePassword?'受限代看（待首次改密账号）：仅查看，完成首次改密后可常规代访问':'按成员实际权限代访问')" @click="prepareImpersonation(x)">{{t(x.mustChangePassword?'受限代看':'代访问账号')}}</button>
 </td>
 </tr>
 </tbody>
 </table>
 </div>
-<div v-if="show" class="modal-shade" @click.self="show=false">
+<div v-if="show" class="modal-shade slide-panel-shade" @click.self="show=false">
 <div class="modal">
 <header>
 <h2>{{ t("创建子账户") }}</h2>
@@ -150,22 +153,23 @@ async function startImpersonation(){
 </footer>
 </div>
 </div>
-<div v-if="impersonating" class="modal-shade" @click.self="!saving&&(impersonating=null)">
+<div v-if="impersonating" class="modal-shade" @click.self="closeImpersonation">
  <section class="modal impersonation-modal" role="dialog" aria-modal="true" aria-labelledby="impersonation-title">
-  <header><h2 id="impersonation-title">{{t('代访问账号')}}</h2><button :disabled="saving" :aria-label="t('关闭')" @click="impersonating=null">×</button></header>
+  <header><h2 id="impersonation-title">{{t(impersonating.mustChangePassword?'受限代看（待首次改密账号）':'代访问账号')}}</h2><button :disabled="saving" :aria-label="t('关闭')" @click="closeImpersonation">×</button></header>
   <div class="modal-body">
    <div class="impersonation-member"><span class="avatar">{{impersonating.name.slice(0,1)}}</span><div><b>{{impersonating.name}}</b><small>{{impersonating.email}}</small></div></div>
-   <p>{{t('将以该成员的权限进入工作台，不需要成员密码。代访问最长 30 分钟，所有操作记录管理员与成员双重身份。')}}</p>
-   <p class="hint">{{t('不能修改密码、账号资料或成员权限；可随时返回管理员。其他已打开页面需刷新后继续操作。')}}</p>
+   <p>{{t('将按该成员的实际权限进入工作台，不需要成员密码。代访问最长 30 分钟，所有操作记录管理员与成员双重身份。')}}</p>
+   <p v-if="impersonating.mustChangePassword" class="readonly-review">{{t('受限代看（待首次改密账号）：只能查看工作与通知，不能修改业务、通知已读状态、显示偏好、密码或权限。成员完成首次改密后才能使用常规代访问。')}}</p>
+   <p v-else class="hint">{{t('不能修改密码、账号资料或成员权限；可随时返回管理员。其他已打开页面需刷新后继续操作。')}}</p>
    <label for="impersonation-reason">{{t('代访问理由')}}</label>
    <textarea id="impersonation-reason" v-model="reason" :disabled="saving" minlength="4" maxlength="500" :placeholder="t('例如：协助排查任务或核对通知，至少 4 个字')"></textarea>
    <p v-if="error" class="field-error" role="alert">{{t(error)}}</p>
   </div>
-  <footer><button class="btn" :disabled="saving" @click="impersonating=null">{{t('取消')}}</button><button class="btn primary" :disabled="saving||reason.trim().length<4" @click="startImpersonation">{{saving?t('正在进入…'):t('确认进入成员账号')}}</button></footer>
+  <footer><button class="btn" :disabled="saving" @click="closeImpersonation">{{t('取消')}}</button><button class="btn primary" :disabled="saving||!validImpersonationReason(reason)" @click="startImpersonation">{{saving?t('正在进入…'):t(impersonating.mustChangePassword?'确认受限代看':'确认进入成员账号')}}</button></footer>
  </section>
 </div>
 </div>
 </template>
 <style scoped>
-.member-login{margin-left:12px;white-space:nowrap}.impersonation-modal{max-width:520px}.impersonation-modal p{font-size:13px;line-height:1.8;color:#667085}.impersonation-modal label{display:block;margin:20px 0 8px;font-size:13px;font-weight:600}.impersonation-modal textarea{width:100%;min-height:90px;border:1px solid #d0d5dd;border-radius:8px;padding:10px;font:inherit;font-size:13px;resize:vertical}.impersonation-member{display:flex;gap:12px;align-items:center}.impersonation-member b,.impersonation-member small{display:block}.impersonation-member small{margin-top:5px;color:#98a2b3}.impersonation-modal footer{gap:8px}
+.member-login{margin-left:12px;white-space:nowrap}.impersonation-modal{max-width:520px}.impersonation-modal p{font-size:13px;line-height:1.8;color:#667085}.impersonation-modal .readonly-review{margin:14px 0;padding:10px 12px;border:1px solid #f2d28b;border-radius:8px;background:#fff8e8;color:#80580f}.impersonation-modal label{display:block;margin:20px 0 8px;font-size:13px;font-weight:600}.impersonation-modal textarea{width:100%;min-height:90px;border:1px solid #d0d5dd;border-radius:8px;padding:10px;font:inherit;font-size:13px;resize:vertical}.impersonation-member{display:flex;gap:12px;align-items:center}.impersonation-member b,.impersonation-member small{display:block}.impersonation-member small{margin-top:5px;color:#98a2b3}.impersonation-modal footer{gap:8px}
 </style>

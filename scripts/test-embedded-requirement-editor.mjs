@@ -9,7 +9,7 @@ async function pure(path) {
   const result = ts.transpileModule(await read(path), {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}})
   return import('data:text/javascript;base64,' + Buffer.from(result.outputText).toString('base64'))
 }
-const fields = await pure('src/requirementFields.ts'), mentions = await pure('src/mentions.ts')
+const fields = await pure('src/requirementFields.ts'), mentions = await pure('src/mentions.ts'), memberRoles=await pure('src/memberRoles.ts')
 const source = await read('src/views/Editor.vue')
 const script = source.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]
 const names = ['load','f','save','dirty','loading','saving','initialized','canEdit','formElement','notice','error','edit','parentContext','requestClose','applyRequirementTemplate','finishLeave','saveDraftAndLeave','draftRecovery','leaveError']
@@ -37,7 +37,7 @@ async function mount({props={embedded:true,parentId:9},params={},query={},overri
   const imports={'../layoutScope':{useLayoutBoolean:(_key,fallback)=>Vue.ref(fallback)},
     vue:{...Vue,onMounted:()=>{},onBeforeUnmount:callback=>unmounts.push(callback)},
     'vue-router':{useRoute:()=>route,useRouter:()=>({push:async target=>{navigations.push(target)}}),onBeforeRouteLeave:callback=>guards.push(callback),onBeforeRouteUpdate:callback=>updates.push(callback)},
-    '../api':{api},'../i18n':{t:value=>value,categoryLabel:value=>value,formatDate:value=>value},'../requirementFields':fields,'../mentions':mentions,
+    '../api':{api},'../i18n':{t:value=>value,categoryLabel:value=>value,formatDate:value=>value},'../requirementFields':fields,'../mentions':mentions,'../memberRoles':memberRoles,
   }
   const window={addEventListener:()=>{},removeEventListener:()=>{},confirm:()=>{context.confirmCount++;return context.confirm}}
   scope.run(()=>new Function('require','exports','window','defineProps','defineEmits','defineExpose',output)(id=>id.endsWith('.vue')?{}:imports[id],exports,window,()=>reactiveProps,()=>(...args)=>events.push(args),value=>{context.public=value}))
@@ -87,7 +87,7 @@ await test('embedded creation emits the server object, retains identity payloads
   assert.equal(body.parentId,9);assert.equal(body.description,'正文\n@同名 协作');assert.deepEqual(body.descriptionMentionUserIds,['u_peer'])
   assert.deepEqual(body.remarksMentionUserIds,['u_me']);assert.deepEqual(body.ownerUserIds,['u_peer','u_me']);assert.deepEqual(body.assigneeUserIds,['u_me','u_peer'])
   assert.deepEqual(body.roleWeights.frontend.userIds,['u_me','u_peer']);assert.equal(body.roleWeights.frontend.value,200)
-  assert.equal(request.options.headers['X-DevFlow-Project'],'prj_test');assert.equal(m.events.length,1)
+  assert.equal(request.options.headers['X-TaskLoom-Project'],'prj_test');assert.equal(m.events.length,1)
   assert.equal(m.events[0][0],'created');assert.equal(m.events[0][1].id,901);assert.equal(m.events[0][2],false)
   assert.equal(m.dirty.value,false);assert.equal(m.saving.value,false);assert.deepEqual(m.navigations,[]);m.stop()
 })
@@ -162,8 +162,20 @@ await test('unmounting prevents a late successful create from emitting or redire
   assert.deepEqual(m.events,[]);assert.deepEqual(m.navigations,[])
 })
 
+await test('embedded root creation has no inherited parent and preserves its explicit iteration',async()=>{
+  // A missing parent (or the zero sentinel) is used by the iteration's create
+  // drawer. Invalid non-empty parent IDs remain a separate rejected case.
+  for(const parentId of [undefined,0]){
+    const m=await mount({props:{embedded:true,parentId,initialSprint:'123'},params:{id:'666'},query:{parentId:'777',sprint:'22'}})
+    await m.load();assert.equal(m.initialized.value,true);assert.equal(m.edit.value,false);assert.equal(m.f.parentId,null);assert.equal(m.f.sprint,'123')
+    assert.equal(m.calls.some(call=>['/requirements/666','/requirements/777'].includes(call.path)),false)
+    m.f.title='迭代内创建根需求';await m.save();const request=m.calls.find(call=>call.options?.method==='POST'),body=JSON.parse(request.options.body)
+    assert.equal(body.parentId,null);assert.equal(body.sprint,'123');assert.equal(m.events[0][0],'created');assert.deepEqual(m.navigations,[]);m.stop()
+  }
+})
+
 await test('invalid or inaccessible embedded parents block creation instead of falling back to a root requirement',async()=>{
-  const invalid=await mount({props:{embedded:true,parentId:0}});await invalid.load();invalid.f.title='不应提交';await invalid.save()
+  const invalid=await mount({props:{embedded:true,parentId:-1}});await invalid.load();invalid.f.title='不应提交';await invalid.save()
   assert.equal(invalid.initialized.value,false);assert.match(invalid.error.value,/父需求无效/);assert.equal(invalid.calls.some(call=>call.options?.method),false);invalid.stop()
   const denied=await mount({override:path=>path==='/requirements/9'?Promise.reject(Error('Not found in project')):undefined});await denied.load();denied.f.title='不应提交';await denied.save()
   assert.equal(denied.initialized.value,false);assert.match(denied.error.value,/Not found/);assert.equal(denied.calls.some(call=>call.options?.method),false);denied.stop()

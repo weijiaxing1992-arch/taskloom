@@ -76,7 +76,7 @@ await test('explicit copy affordance is labelled and works without navigating',a
 await test('partial cross-project work rows fetch authorized detail and only the bound names on demand',async()=>{
   const detail=complete({projectId:'p-b',assigneeUserIds:['a'],assignees:[{id:'a',name:'Alice'}],roleWeights:{...emptyWeights(),frontend:{userIds:['f1','f2']}}})
   const m=await mount({requirement:{id:17,code:'REQ-0017',type:'需求'},projectId:'p-b'},async path=>path==='/requirements/17'?detail:{items:[{id:'f1',name:'Frontend One'},{id:'f2',name:'Frontend Two'},{id:'secret',name:'Unbound private name'}]})
-  await flush();assert.equal(m.calls.length,0);await m.context.copy();assert.deepEqual(m.calls.map(x=>x.path),['/requirements/17','/members']);assert(m.calls.every(call=>call.options.headers['X-DevFlow-Project']==='p-b'&&!call.options.method));assert.match(m.writes[0],/Frontend One、Frontend Two/);assert.ok(!m.writes[0].includes('Unbound private name'));assert.equal(m.storage.get('devflow-project'),'p-a');m.stop()
+  await flush();assert.equal(m.calls.length,0);await m.context.copy();assert.deepEqual(m.calls.map(x=>x.path),['/requirements/17','/members']);assert(m.calls.every(call=>call.options.headers['X-TaskLoom-Project']==='p-b'&&!call.options.method));assert.match(m.writes[0],/Frontend One、Frontend Two/);assert.ok(!m.writes[0].includes('Unbound private name'));assert.equal(m.storage.get('devflow-project'),'p-a');m.stop()
 })
 await test('pending copy coalesces repeat clicks and failure never copies fake unassigned data',async()=>{
   const pending=deferred(),m=await mount({requirement:{id:17}},()=>pending.promise);const first=m.context.copy();await m.context.copy();assert.equal(m.calls.length,1);assert.equal(m.context.busy,true);pending.reject(Error('permission denied'));await first
@@ -128,7 +128,7 @@ await test('all four views integrate only genuine requirement codes without nest
   }
 })
 await test('clipboard identity checking remains backed by the verified account and expected-user API boundary',async()=>{
-  const source=await read('src/api.ts');assert.match(source,/X-DevFlow-Expected-User/);assert.match(await read('src/components/RequirementCode.vue'),/request\.identity===layoutScope\.value/)
+  const source=await read('src/api.ts');assert.match(source,/X-TaskLoom-Expected-User/);assert.match(await read('src/components/RequirementCode.vue'),/request\.identity===layoutScope\.value/)
   const scope={};new Function('require','exports',transpile(await read('src/layoutScope.ts')))(id=>{assert.equal(id,'vue');return Vue},scope)
   assert.equal(scope.layoutScope.value,'');scope.applyLayoutScope('tenant:a','user:b');assert.equal(scope.layoutScope.value,'tenant%3Aa:user%3Ab')
   scope.applyLayoutScope('tenant:a','another-user');assert.equal(scope.layoutScope.value,'tenant%3Aa:another-user');scope.clearLayoutScope();assert.equal(scope.layoutScope.value,'')

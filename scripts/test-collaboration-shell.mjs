@@ -20,7 +20,7 @@ test('workspace refresh retains every existing collaboration and administration 
   assert.match(projectNavigationView, /projectNavigationItems\[key\]\.path/)
 })
 test('new menu groups retain role, impersonation and mobile access guards', () => {
-  assert.match(shell, /v-if="workspace.canViewReports" to="\/reports\/workload"/)
+  assert.match(shell, /v-if="workspace.canAccessWorkload" to="\/reports\/workload"/)
   assert.match(shell, /v-if="workspace.canManageProject" to="\/settings\/fields"/)
   assert.match(shell, /v-if="workspace.canOpenOrganization" to="\/organization"/)
   assert.match(shell, /v-if="workspace.canManageOrganization&&!session.impersonation" to="\/settings\/ai"/)

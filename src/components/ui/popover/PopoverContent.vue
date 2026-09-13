@@ -11,5 +11,5 @@ function escape(event: KeyboardEvent) { event.stopImmediatePropagation() }
 </script>
 <template>
   <!-- Deliberately local: inheriting App's inert identity guard is mandatory. -->
-  <PopoverContent v-bind="forwarded" data-slot="popover-content" :class="cn('z-[300] w-72 rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-lg outline-none origin-[var(--reka-popover-content-transform-origin)] motion-safe:data-[state=open]:animate-in motion-safe:data-[state=closed]:animate-out motion-safe:data-[state=open]:fade-in-0 motion-safe:data-[state=closed]:fade-out-0 motion-safe:data-[state=open]:zoom-in-95 motion-safe:data-[state=closed]:zoom-out-95', props.class)" @escape-key-down="escape"><slot /></PopoverContent>
+  <PopoverContent v-bind="forwarded" data-slot="popover-content" :class="cn('df-motion-overlay z-[300] w-72 rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-none origin-[var(--reka-popover-content-transform-origin)] motion-safe:data-[state=open]:animate-in motion-safe:data-[state=closed]:animate-out motion-safe:data-[state=open]:fade-in-0 motion-safe:data-[state=closed]:fade-out-0', props.class)" @escape-key-down="escape"><slot /></PopoverContent>
 </template>

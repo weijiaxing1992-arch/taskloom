@@ -35,7 +35,7 @@ func (a *App) requirementLinks(w http.ResponseWriter, r *http.Request, id int64,
 				return
 			}
 			state := catalog[status]
-			items = append(items, map[string]any{"id": linked, "code": code, "title": title, "status": status, "statusName": state.Name, "statusColor": state.Color, "statusCategory": state.Category, "statusSystem": state.System})
+			items = append(items, map[string]any{"id": linked, "code": requirementDisplayCode(linked, code), "title": title, "status": status, "statusName": state.Name, "statusColor": state.Color, "statusCategory": state.Category, "statusSystem": state.System})
 		}
 		if err = rows.Err(); err != nil {
 			failCollaboration(w, err)
@@ -104,6 +104,25 @@ func (a *App) requirementLinks(w http.ResponseWriter, r *http.Request, id int64,
 			action = "requirement_unlinked"
 		}
 		_, err = tx.ExecContext(r.Context(), `INSERT INTO audit_logs(tenant_id,project_id,actor_id,object_type,object_id,action,after_json,created_at)VALUES(?,?,?,'requirement',?,?,?,?)`, tenantID, a.pid(), a.uid(), fmt.Sprint(id), action, jsonText(map[string]any{"requirementId": target, "relationType": "relates_to"}), orgNow())
+		if err == nil {
+			for _, pair := range [][2]int64{{id, target}, {target, id}} {
+				var code, title string
+				err = tx.QueryRowContext(r.Context(), `SELECT code,title FROM requirements WHERE tenant_id=? AND project_id=? AND id=?`, tenantID, a.pid(), pair[1]).Scan(&code, &title)
+				if err != nil {
+					break
+				}
+				value := map[string]any{"id": pair[1], "code": requirementDisplayCode(pair[1], code), "title": title, "relationType": "relates_to"}
+				var before, after any
+				if r.Method == http.MethodDelete {
+					before = value
+				} else {
+					after = value
+				}
+				if err = a.recordRequirementRelatedChange(tx, pair[0], "relatedRequirement", action, "关联需求", before, after); err != nil {
+					break
+				}
+			}
+		}
 	}
 	if err == nil {
 		err = tx.Commit()

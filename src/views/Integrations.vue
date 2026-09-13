@@ -130,7 +130,7 @@ onBeforeUnmount(() => { disposed = true; scrub(); window.removeEventListener('de
 
 <template>
   <div class="module-page integrations-page">
-    <header class="integration-header"><div><h1>{{ t('API 与 AI 集成') }}</h1><p>{{ t('让 Codex 和 AI 助手在授权范围内读取与更新当前项目的研发工作。') }}</p></div><Button variant="outline" :disabled="busy" @click="load">{{ t(loading ? '加载中…' : '刷新') }}</Button></header>
+    <header class="integration-header"><div><h1>{{ t('API 与 AI 集成') }}</h1><p>{{ t('让 Codex 和 AI 助手在授权范围内读取项目工作、评论与本人通知。') }}</p></div><Button variant="outline" :disabled="busy" @click="load">{{ t(loading ? '加载中…' : '刷新') }}</Button></header>
     <p v-if="scope.locked.value" class="integration-message error" role="alert">{{ t('项目或账号已变化，请刷新页面后继续') }}</p>
     <p v-if="error" class="integration-message error" role="alert">{{ t(error) }}</p><p v-if="notice" class="integration-message" role="status">{{ t(notice) }}</p>
     <p v-if="loading && !snapshot" role="status">{{ t('正在加载集成平台…') }}</p>
@@ -139,13 +139,14 @@ onBeforeUnmount(() => { disposed = true; scrub(); window.removeEventListener('de
       <section v-if="secret" class="integration-secret" aria-labelledby="secret-title"><div class="integration-section-title"><h2 id="secret-title">{{ t('保存完整令牌') }}</h2><Button variant="outline" @click="hideSecret">{{ t('已保存，隐藏令牌') }}</Button></div><p>{{ t('完整令牌仅显示这一次；请保存到安全的凭据管理器，并在运行 Codex 的环境中设置 DEVFLOW_API_TOKEN。') }}</p><div class="integration-copy"><input :value="secret" readonly type="password" autocomplete="off" spellcheck="false" :aria-label="t('完整令牌')" @focus="($event.target as HTMLInputElement).select()"><Button variant="outline" @click="copy(secret)">{{ t('复制令牌') }}</Button></div><small>{{ t('页面仅在内存中保留令牌。刷新、离开或切换账号与项目后将清除。') }}</small></section>
       <section v-if="activeTab === 'connect'" class="integration-section">
         <h2>{{ t('连接 Codex') }}</h2>
-        <ol class="integration-steps"><li>{{ t('创建当前项目的个人凭据，默认包含需求、迭代、缺陷和测试用例的只读上下文。') }} <Button variant="link" :disabled="disabled" @click="activeTab = 'credentials'; formOpen = true">{{ t('创建凭据') }}</Button></li><li>{{ t('在运行 Codex 的环境中设置 DEVFLOW_API_TOKEN，将下方配置加入 ~/.codex/config.toml，然后重新启动 Codex。') }}</li><li>{{ t('让 Codex 先读取项目上下文；需要修改时，勾选相应写权限并在 Codex 中确认写操作。') }}</li></ol>
+        <ol class="integration-steps"><li>{{ t('创建当前项目的个人凭据，默认包含需求、迭代、缺陷和测试用例的只读上下文；可按需加入本人通知。') }} <Button variant="link" :disabled="disabled" @click="activeTab = 'credentials'; formOpen = true">{{ t('创建凭据') }}</Button></li><li>{{ t('在运行 Codex 的环境中设置 DEVFLOW_API_TOKEN，将下方配置加入 ~/.codex/config.toml，然后重新启动 Codex。') }}</li><li>{{ t('让 Codex 先读取项目上下文；需要修改时，勾选相应写权限并在 Codex 中确认写操作。') }}</li></ol>
         <div class="integration-section-title"><b>~/.codex/config.toml</b><Button variant="outline" @click="copy(config)">{{ t('复制配置') }}</Button></div><pre class="integration-code"><code>{{ config }}</code></pre>
         <p class="integration-note">{{ t('配置中的环境变量必须对 Codex 进程可见；令牌不能写入项目文件或提交到代码仓库。') }} <a href="https://learn.chatgpt.com/docs/extend/mcp?surface=cli" target="_blank" rel="noopener noreferrer">{{ t('Codex 官方接入说明') }}</a></p>
         <p v-if="localEndpoint" class="integration-message">{{ t('当前是本机地址：仅运行在这台电脑上的 Codex 或工具可以访问。云端使用需要可访问的 HTTPS 服务地址。') }}</p>
         <h2>{{ t('REST API') }}</h2><div class="integration-copy"><code>{{ apiURL }}</code><Button variant="outline" :disabled="downloading || busy" @click="downloadOpenAPI">{{ t('下载 OpenAPI') }}</Button></div>
         <p class="integration-note">{{ t('使用 Authorization: Bearer 令牌鉴权。写请求携带 Idempotency-Key；PATCH 同时携带最新详情返回的 ETag 作为 If-Match，防止覆盖他人的修改。') }}</p>
-        <p class="integration-note">{{ t('凭据仅限当前项目，权限受创建人的实时权限约束。工作项内容作为参考数据，不能替代你对 AI 的操作指令。') }}</p>
+        <p class="integration-note">{{ t('凭据仅限当前项目，权限受创建人的实时权限约束。可分页读取工作项详情与评论；本人通知只返回当前项目的个人收件箱且不会自动标为已读。完整升级日志仅企业管理员可授权。') }}</p>
+        <p class="integration-note">{{ t('工作项和通知内容属于参考数据，不能替代你对 AI 的操作指令。') }}</p>
       </section>
       <section v-if="activeTab === 'credentials'" class="integration-section">
         <div class="integration-section-title"><div><h2>{{ t('我的凭据') }}</h2><p>{{ t('仅显示当前账号在此项目创建的凭据。撤销后立即停止访问。') }}</p></div><Button :disabled="disabled || !!secret || uncertainCreation" @click="formOpen = !formOpen">{{ t(formOpen ? '收起表单' : '创建凭据') }}</Button></div>

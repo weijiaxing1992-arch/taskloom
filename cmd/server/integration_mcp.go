@@ -49,10 +49,19 @@ func integrationMCPQuerySchema(resource string) map[string]any {
 		"defects":                {"q", "status", "priority", "sprint"},
 		"test-cases":             {"q", "status", "priority", "ownerUserId"},
 		"executions":             {"status"},
+		"notifications":          {"q", "read", "eventType", "group"},
+		"release-notes":          {"q"},
 		"requirement-test-cases": {"q", "status", "priority", "ownerUserId"},
 	}
 	for _, key := range keys[resource] {
 		properties[key] = map[string]any{"type": "string", "maxLength": 200}
+	}
+	if resource == "release-notes" {
+		properties["q"] = map[string]any{"type": "string", "maxLength": 100}
+	}
+	if resource == "notifications" {
+		properties["read"] = map[string]any{"type": "string", "enum": []string{"read", "unread"}}
+		properties["group"] = map[string]any{"type": "string", "enum": []string{"mentions", "handoffs", "changes", "activity"}}
 	}
 	if resource == "test-cases" {
 		properties["requirementId"] = integrationMCPPositiveID()
@@ -116,6 +125,10 @@ func integrationMCPTools(scopes []string) []integrationMCPTool {
 			}, "id", "body", "idempotencyKey"), readScope, "comments:write")
 		}
 	}
+	add("devflow_notifications_list", "List notifications addressed to the credential owner in the credential's project. Reading never changes read status.", "notifications", "list", integrationMCPSchema(map[string]any{"query": integrationMCPQuerySchema("notifications")}), "notifications:read")
+	add("devflow_notifications_get", "Read one notification addressed to the credential owner in the credential's project. Reading never changes read status.", "notifications", "get", integrationMCPSchema(map[string]any{"id": integrationMCPPositiveID()}, "id"), "notifications:read")
+	add("devflow_release_notes_list", "List saved release-note snapshots in the credential's project. The credential owner must still be an enterprise administrator.", "release-notes", "list", integrationMCPSchema(map[string]any{"query": integrationMCPQuerySchema("release-notes")}), "release-notes:read")
+	add("devflow_release_notes_get", "Read one complete saved release-note snapshot. The credential owner must still be an enterprise administrator.", "release-notes", "get", integrationMCPSchema(map[string]any{"id": integrationMCPPositiveID()}, "id"), "release-notes:read")
 	add("devflow_requirements_transitions", "Read the allowed status transitions for one requirement; use requirements_update to apply an allowed status.", "requirements", "transitions", integrationMCPSchema(map[string]any{"id": integrationMCPPositiveID()}, "id"), "requirements:read")
 	add("devflow_requirements_test_cases", "Read the paginated test cases linked to one requirement.", "requirements", "test-cases", integrationMCPSchema(map[string]any{"id": integrationMCPPositiveID(), "query": integrationMCPQuerySchema("requirement-test-cases")}, "id"), "requirements:read", "test-cases:read")
 	return tools
@@ -214,7 +227,7 @@ func serveIntegrationMCP(w http.ResponseWriter, r *http.Request, dispatch http.H
 			return
 		}
 		version = "2025-06-18"
-		integrationMCPJSON(w, 200, id, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": false}}, "serverInfo": map[string]any{"name": "devflow", "version": "1.0.0"}, "instructions": integrationMCPInstructions}, 0, "")
+		integrationMCPJSON(w, 200, id, map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": false}}, "serverInfo": map[string]any{"name": "devflow", "version": "1.1.0"}, "instructions": integrationMCPInstructions}, 0, "")
 	case "ping":
 		integrationMCPJSON(w, 200, id, map[string]any{}, 0, "")
 	case "tools/list":

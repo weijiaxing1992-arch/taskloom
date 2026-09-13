@@ -1,88 +1,39 @@
-# 部署、升级与回滚流程
+# TaskLoom 社区版部署、升级与恢复
 
-## 交付物与前置条件
+## 交付物与构建
 
-先阅读验收报告中的保留项。源码包包含 Web、Go、Flutter 源码及门户资源；服务包包含 server、deployment-preflight、凭据管理工具、web 与部署模板。不包含真实业务库、用户清单、密码、机器人密钥、.env、依赖缓存或私有运行日志。请由数据责任人单独受控交付数据库与密钥。
+社区仓库提供 Web 与 Go 源码、锁文件、测试及说明。它不携带业务数据库、真实成员、密钥、依赖缓存、原生安装包或私有生产部署模板。部署方自行提供目标主机、HTTPS 代理和进程管理配置。
 
-Linux amd64 对应 x86_64 ECS，不能在 ARM 实例上直接执行。macOS arm64 服务程序用于开发检查，不是公证 DMG。依赖版本以 go.mod、pnpm-lock.yaml、Flutter pubspec.lock 为准。先校验 SHA256SUMS.txt。
+使用 Node.js >=22.12、pnpm 11.19.0 和 go.mod 指定的 Go 1.27.1。运行 pnpm install --frozen-lockfile、pnpm typecheck、pnpm test、pnpm build 和 go test ./...；用 go build -o server ./cmd/server 构建当前平台服务。其他平台需选择正确 GOOS/GOARCH 并在目标主机验证，交叉编译不代表部署已验收。
 
-## 目录与端口
+Vite 输出干净的 dist/，含 Vue 桌面 index.html 与 React mobile.html。按 README 将产物复制到新的 web/ 目录，不将源码根目录作为公网静态目录，也不合并未经审查的历史产物。
 
-```text
-/opt/devflow/releases/<version>/   server、deployment-preflight、web、脚本
-/opt/devflow/current              指向当前 release 的符号链接
-/opt/devflow/data/devflow.db      独立数据卷，devflow 用户读写
-/opt/devflow/secrets/devflow.env  root:root 0600，systemd 读取
-/opt/devflow/backups/            一致性快照，另行上传私有 OSS
-443 / 80                        Caddy HTTPS / 跳转
-127.0.0.1:19080                  Go API + Web，仅本机
-```
+## 本机初次使用
 
-安全组不开放 19080，不开放数据库端口；SSH 只允许运维来源。仅把 web/ 配给 DEVFLOW_WEB_DIR，绝不把整个交付目录作为站点根目录。
+按 README 启动 node start.mjs，访问 http://127.0.0.1:8080。启动器固定使用同目录 data/community.db、web/、随机会话密钥和企微 mock 模式。首次账号 Admin / 123456，必须修改密码；未改密时业务接口受限，服务拒绝非回环监听。
 
-## 首次安装
+初始化期间不得开放公网反向代理；远程主机使用 SSH 隧道完成改密。预置的是星河示例企业和虚构成员，不是任何实际组织快照。其他成员密码随机产生，由管理员管理。不要导入商业版历史数据库，不要覆盖已有业务目录以重新初始化。
 
-1. 准备建议的 ECS、磁盘挂载、系统更新、时间同步、专用 devflow 系统用户。安装官方 Caddy；不要使用 root 运行 API。
-2. 解压 linux-amd64 包到新 release 目录，核对文件校验和及 file server 的架构结果，保留原发布版本。
-3. 从受控渠道取得一致性业务库快照，复制到尚未运行服务的 data 目录，并设置 devflow 所有、文件 0600 / 目录 0700。不要直接复制运行中的 DB/WAL，不要用旧系统 SQLite 操作现有库。
-4. 全新企业初始化与示例清理要在隔离环境明确审核；不得直接用空数据库启动正式 server，因为直接启动可能生成演示数据。详细预置步骤参见 docs/deployment-preflight.md 的离线副本流程及工具 --help。
-5. 将 deploy/devflow.env.example 安装为 secrets/devflow.env。设置真实绝对路径、回环监听、COOKIE_SECURE=true、SQLITE_SYNCHRONOUS=FULL，生成独立高强度 SESSION_SECRET。密钥只写入受控文件，不写进命令历史 / 文档 / Git。
-6. 外部企微保持 mock 直到真实通道通过受控联调；上线须核查实际发送模式、出站限制和密钥文件。AI、MCP Token 按最小权限另行配置。
-7. 建立 current 链接；复制 deploy/devflow.service 到 systemd，确认 ExecStart、User、ReadWritePaths、env 路径；daemon-reload 后 enable --now devflow。start-production.sh 会先运行环境 / 数据库预检，不满足时拒绝启动。
-8. 将 deploy/Caddyfile.example 域名换成正式域名。配置 DNS、TLS、请求体上限与代理超时，验证配置后加载；公网门户地址与 backendUrl 在 portal/config.json 配置并重新构建。
-9. 部署备份 service / timer，确认备份目录可写、OSS 上传脚本具有最小 RAM 权限；定时任务本身不等于异地灾备。
-10. 验证 /api/health、登录、关键读写、上传下载、通知、水印真实 IP、权限隔离、进程重启、备份恢复和外部告警。全部通过后再对业务开放。
+## 正式运行配置
 
-示例管理命令（密钥配置由受控 env 文件提供；这些命令不会创建数据库）：
+正式服务由部署方的进程管理器直接执行 server。node start.mjs 是本机演示入口，会固定覆盖数据库、监听与企微模式，不能通过给它传入正式环境变量来替代生产配置。
 
-```sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now devflow
-sudo systemctl status devflow --no-pager
-curl --fail http://127.0.0.1:19080/api/health
-sudo journalctl -u devflow -n 100 --no-pager
-```
+将数据库与密钥放在独立、受权限保护的位置，设置 DEVFLOW_DB、DEVFLOW_WEB_DIR、DEVFLOW_WECOM_KEY_FILE 为明确路径。Go 监听回环地址，代理提供 TLS，DEVFLOW_COOKIE_SECURE=true、DEVFLOW_SQLITE_SYNCHRONOUS=FULL，独立 DEVFLOW_SESSION_SECRET 至少 32 字节。仅授权进程用户读写业务和密钥目录，公网只提供构建后的 web/ 和必要 API。
 
-## 备份与恢复演练
+外部 AI、微信、企业微信分别配置；企微先保持 mock。真实通知启用前验证凭据、绑定、域名和出站要求。确认 /api/health、登录、上传下载、权限、进程重启和外部监控后再开放业务。
 
-使用与服务相同 SQLite 引擎编译的 deployment-preflight：
+## 一致性备份与恢复
 
-```sh
-/opt/devflow/current/deployment-preflight --db /opt/devflow/data/devflow.db --backup-out /opt/devflow/backups/new-snapshot.db
-```
+用 go build -o deployment-preflight ./cmd/deployment-preflight 构建备份和预检工具。通过 --db 指向已有库，--backup-out 指向不存在的新绝对路径，可使用应用同源 SQLite 引擎创建一致性备份。具体参数先查看 --help；备份不使用离线凭据重置选项。
 
-输出必须是一个不存在的新文件；备份按工具检查结果验收，记录 SHA-256、时间、库大小、恢复所需密钥标识（不记密钥值）。上传私有 OSS 后校验远端校验和。保留策略经业务批准后启用，严禁通配符删除正在使用的数据库。
+保存备份时间、校验和与版本，并与匹配的持久加密密钥配对保管。不要仅复制运行中的数据库文件，不要删除 WAL 或把快照覆盖到活动数据库。备份应另存到权限隔离的位置，并完成实际恢复演练。
 
-恢复时停止写入；在新目录恢复快照和匹配密钥，运行预检、完整性和外键检查，隔离端口启动新服务抽测。确认正常后切换服务，保留故障库及 WAL 给调查使用。不要把备份覆盖到运行中数据库；恢复结果未经演练不能承诺 RTO。
+恢复时停写，在新目录恢复快照和匹配密钥，运行完整性检查，隔离启动后抽查账号、需求数量、附件和外部配置解密。确认后再切换；保留故障原始文件供调查，评估快照之后的数据损失与回补。
 
 ## 升级与回滚
 
-1. 维护窗口告知用户保存编辑；保留旧 release、env 和当前一致性备份。
-2. 在离线快照先验证新迁移。发布目录必须不可变，不覆盖当前二进制或正在被页面引用的资源。
-3. 使用 scripts/retain-web-assets.mjs 保留上一版带 hash 静态资源，避免旧页面动态加载失败。
-4. 在维护窗口停止旧进程、切 current、启动新进程，检查健康、登录和关键链路。当前服务停止可能中断正在处理的请求，需预留窗口，不能承诺零停机。
-5. 只有确认数据库模式向后兼容时才能只回滚二进制；不兼容时应停写并用匹配版本快照恢复到新数据路径。快照后的新增数据需要人工评估和回补。
-6. 稳定后恢复开放。回滚不是随意删除 WAL 或反向执行迁移。
+维护窗口前保存用户草稿、旧发布目录和一致性快照。先在隔离副本验证迁移和新功能，再停止旧服务、切换新目录并执行健康和业务检查。社区构建会清理输出目录，故应在新目录构建，不能覆盖正在使用的资源。
 
-## 从源码编译
+如需支持旧页面加载哈希资源，可在两个独立且已审查的社区 web/ 目录之间运行 scripts/retain-web-assets.mjs；该工具不复制 HTML 入口，不代表可以混入商业产物。保留策略应以恢复与隐私范围为依据。
 
-```sh
-corepack pnpm install --frozen-lockfile
-pnpm test
-pnpm build
-go test ./...
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o server ./cmd/server
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o deployment-preflight ./cmd/deployment-preflight
-```
-
-需 Node >=22.12、锁定的 pnpm 和 go.mod 指定的 Go 工具链。源码包保留门户的已校验测试 DMG，因为当前门户构建会核对真实下载文件摘要；不能用占位下载替换。Flutter 构建需要 macOS、Xcode 和匹配 Flutter SDK；原生功能完整验收另行进行。
-
-## 上线签署清单
-
-必须由负责人记录：正式域名 / 地域、业务峰值、附件预算、RAM / 安全组、HTTPS、数据迁移审核、临时密码轮换、真实通知 / AI 联调、目标 ECS 压测、备份恢复演练、值班告警、业务 UAT 结果和回滚负责人。本地验收不能替代这些上线动作。
-
-## 本机验收服务的运行位置
-
-本机端口仍为 127.0.0.1:19086，由 com.devflow.local19086 用户 LaunchAgent 托管。为了避免 macOS 后台进程读取文稿目录受阻，运行目录改为当前用户 Library/Application Support/DevFlowLocal；实际业务库是其中 data/accepted-20260906.db，匹配密钥独立保存在 data/devflow.db.wecom-key。旧工作区 work/current-preview.db 保留为迁移前快照，不再作为活动库；不要在两个路径同时启动写入服务。
-
-start-local-service.sh 在每次启动前检查绝对路径、非空文件和数据库预检，失败立即退出，不创建演示库。应用数据目录、密钥和本机用户专用 LaunchAgent 不放入公共交付包。本机使用回环 Cookie 与开发签名配置，不能直接照搬到公网；阿里云必须采用前述生产部署配置。macOS 退出当前用户后该用户服务不可视为全天候服务器，应使用 ECS 正式承载业务。
+回滚二进制前核对数据库向后兼容性；不兼容时恢复匹配版本的数据库到新路径，并明确处理快照后的新增记录。本项目未承诺零停机升级或自动回滚，目标环境部署、UAT 和备份恢复结果需要独立记录。

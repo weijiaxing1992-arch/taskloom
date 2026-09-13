@@ -10,7 +10,7 @@ async function pure(path) {
 }
 const fields=await pure('src/requirementFields.ts'),mentions=await pure('src/mentions.ts')
 const source=await read('src/views/Editor.vue'),script=source.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]
-const names=['load','save','savePrivateDraft','restoreDraft','draftRecovery','draftPayload','draftContext','requestedDraftId','f','dirty','error','notice','baseline','formElement','descriptionDraftRevision','requestClose','savedAssigneeIds','editorDatesValid','titleAssistant','saving','moreFields','expanded']
+const names=['load','save','savePrivateDraft','restoreDraft','draftRecovery','draftPayload','draftContext','requestedDraftId','f','dirty','error','notice','baseline','formElement','descriptionDraftRevision','requestClose','finishLeave','savedAssigneeIds','editorDatesValid','titleAssistant','saving','moreFields','expanded','peopleExpanded']
 const js=ts.transpileModule(script+'\nexport {'+names.join(',')+'}',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
 function deferred(){let resolve;return {promise:new Promise(done=>resolve=done),resolve:value=>resolve(value)}}
 async function mount({edit=false,embedded=false,parentId=9,failSave=false}={}){
@@ -41,8 +41,8 @@ await test('quick capture defaults collapsed while editing stays expanded and to
   const editing=await mount({edit:true});assert.equal(editing.expanded.value,true);editing.stop()
 })
 await test('invalid hidden fields expand before native focus and do not submit or erase the draft',async()=>{
-  const m=await mount(),details={open:false};m.f.title='保留标题';let focused=false
-  m.formElement.value={checkValidity:()=>false,querySelectorAll:()=>[details],reportValidity:()=>{assert.equal(m.expanded.value,true);assert.equal(details.open,true);focused=true;return false}}
+  const m=await mount(),details={open:false};m.f.title='保留标题';m.peopleExpanded.value=false;let focused=false
+  m.formElement.value={checkValidity:()=>false,querySelectorAll:()=>[details],reportValidity:()=>{assert.equal(m.expanded.value,true);assert.equal(m.peopleExpanded.value,true);assert.equal(details.open,true);focused=true;return false}}
   await m.save();assert.equal(focused,true);assert.equal(m.calls.some(call=>call.options?.method),false);assert.equal(m.f.title,'保留标题');m.stop()
 })
 await test('manual private drafts save incomplete forms without AI, native validity or a requirement request',async()=>{
@@ -84,9 +84,9 @@ await test('formal save completes the private draft only after the actual reques
   await m.save(true);assert.deepEqual(order,['complete']);assert.equal(m.events[0][0],'created');assert.equal(m.f.title,'');assert.equal(m.f.parentId,9);m.stop()
 })
 await test('failed formal saves retain the draft; failed cleanup never creates a duplicate item',async()=>{
-  const failed=await mount({failSave:true});let cleanups=0;failed.f.title='保留'
+  const failed=await mount({failSave:true});let cleanups=0;failed.f.title='保留';failed.peopleExpanded.value=false
   failed.draftRecovery.value={saveNow:async()=>true,complete:async()=>{cleanups++}}
-  await failed.save();assert.equal(cleanups,0);assert.equal(failed.f.title,'保留');assert.equal(failed.dirty.value,true);failed.stop()
+  await failed.save();assert.equal(cleanups,0);assert.equal(failed.f.title,'保留');assert.equal(failed.dirty.value,true);assert.equal(failed.peopleExpanded.value,true);failed.stop()
   const m=await mount({embedded:true});m.f.title='成功';m.draftRecovery.value={saveNow:async()=>true,complete:async()=>{throw Error('cleanup')}}
   await m.save();assert.equal(m.calls.filter(call=>call.options?.method).length,1);assert.equal(m.events[0][0],'created');assert.equal(m.error.value,'');m.stop()
 })
@@ -94,12 +94,12 @@ await test('manual draft writes guard closing and duplicate business submits whi
   const m=await mount({edit:true,embedded:true}),pending=deferred();m.f.title='当前修改'
   m.draftRecovery.value={saveNow:()=>pending.promise,complete:async()=>{}}
   const saving=m.savePrivateDraft();assert.equal(await m.requestClose(),false);await m.save();assert.equal(m.calls.filter(call=>call.options?.method).length,0)
-  pending.resolve(true);await saving;assert.equal(m.f.title,'当前修改');assert.equal(await m.requestClose(),true);m.stop()
+  pending.resolve(true);await saving;assert.equal(m.f.title,'当前修改');const leaving=m.requestClose();m.finishLeave(true);assert.equal(await leaving,true);m.stop()
 })
 await test('standalone URL and embedded restore IDs are independent',async()=>{
   const normal=await mount();assert.equal(normal.requestedDraftId.value,'url-draft');normal.stop()
   const child=await mount({embedded:true});assert.equal(child.requestedDraftId.value,'child-draft');child.stop()
 })
 assert.match(source,/:target-id="edit\?String\(editingID\):''"/)
-assert.match(source,/:busy="saving\|\|descriptionMediaBusy\|\|titleGenerating"/)
+assert.match(source,/:busy="saving\|\|descriptionMediaBusy\|\|refinementBusy\|\|titleGenerating"/)
 console.log(`Passed ${count} Editor private-draft tests`)

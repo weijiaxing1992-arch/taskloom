@@ -8,12 +8,13 @@ import (
 )
 
 type projectMemberCandidate struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Email      string  `json:"email"`
-	Active     bool    `json:"active"`
-	TenantRole string  `json:"tenantRole"`
-	Role       *string `json:"role"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Email        string   `json:"email"`
+	Active       bool     `json:"active"`
+	TenantRole   string   `json:"tenantRole"`
+	Role         *string  `json:"role"`
+	ProjectRoles []string `json:"projectRoles"`
 }
 
 func activeMemberProject(ctx context.Context, store stateStore, id string) error {
@@ -32,7 +33,7 @@ func activeMemberProject(ctx context.Context, store stateStore, id string) error
 }
 
 func listProjectMemberCandidates(ctx context.Context, store stateStore, project string) ([]projectMemberCandidate, error) {
-	rows, err := store.QueryContext(ctx, `SELECT u.id,u.name,u.email,(u.active=1 AND tm.status='active'),tm.role,pm.role FROM users u JOIN tenant_memberships tm ON tm.tenant_id=u.tenant_id AND tm.user_id=u.id LEFT JOIN project_members pm ON pm.tenant_id=u.tenant_id AND pm.user_id=u.id AND pm.project_id=? WHERE u.tenant_id=? AND tm.status!='removed' ORDER BY u.name,u.id`, project, tenantID)
+	rows, err := store.QueryContext(ctx, `SELECT u.id,u.name,u.email,(u.active=1 AND tm.status='active'),tm.role,pm.role,`+projectRolesJSONSQL("pm")+` FROM users u JOIN tenant_memberships tm ON tm.tenant_id=u.tenant_id AND tm.user_id=u.id LEFT JOIN project_members pm ON pm.tenant_id=u.tenant_id AND pm.user_id=u.id AND pm.project_id=? WHERE u.tenant_id=? AND tm.status!='removed' ORDER BY u.name,u.id`, project, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +41,13 @@ func listProjectMemberCandidates(ctx context.Context, store stateStore, project 
 	items := []projectMemberCandidate{}
 	for rows.Next() {
 		var item projectMemberCandidate
-		if err = rows.Scan(&item.ID, &item.Name, &item.Email, &item.Active, &item.TenantRole, &item.Role); err != nil {
+		var rawRoles string
+		if err = rows.Scan(&item.ID, &item.Name, &item.Email, &item.Active, &item.TenantRole, &item.Role, &rawRoles); err != nil {
 			return nil, err
+		}
+		item.ProjectRoles = []string{}
+		if item.Role != nil {
+			item.ProjectRoles = decodedProjectRoles(rawRoles, *item.Role)
 		}
 		items = append(items, item)
 	}
@@ -88,9 +94,10 @@ func (a *App) manageProjectMembers(w http.ResponseWriter, r *http.Request, proje
 		return
 	}
 	var input struct {
-		AddUserIDs    []string `json:"addUserIds"`
-		RemoveUserIDs []string `json:"removeUserIds"`
-		Role          string   `json:"role"`
+		AddUserIDs    []string            `json:"addUserIds"`
+		RemoveUserIDs []string            `json:"removeUserIds"`
+		Role          string              `json:"role"`
+		RoleUpdates   map[string][]string `json:"roleUpdates"`
 	}
 	if err := decodeOrganizationJSON(w, r, &input); err != nil {
 		failOrganization(w, err)
@@ -141,6 +148,30 @@ func (a *App) manageProjectMembers(w http.ResponseWriter, r *http.Request, proje
 			failOrganization(w, orgNotFound())
 			return
 		}
+	}
+	touched := map[string]bool{}
+	for _, id := range append(append([]string{}, add...), remove...) {
+		touched[id] = true
+	}
+	for id := range input.RoleUpdates {
+		touched[id] = true
+	}
+	if len(touched) > 200 {
+		failOrganization(w, orgInvalid("每次最多调整 200 位成员"))
+		return
+	}
+	for id, roles := range input.RoleUpdates {
+		item, exists := candidates[id]
+		if !exists || validChoice(id, remove) || item.Role == nil && !validChoice(id, add) {
+			failOrganization(w, orgInvalid("仅可编辑已加入或本次加入项目的成员角色"))
+			return
+		}
+		normalized, roleErr := normalizedProjectRoles(roles, "")
+		if roleErr != nil {
+			failOrganization(w, roleErr)
+			return
+		}
+		input.RoleUpdates[id] = normalized
 	}
 	for _, id := range remove {
 		item := candidates[id]
@@ -203,20 +234,48 @@ func (a *App) manageProjectMembers(w http.ResponseWriter, r *http.Request, proje
 			}
 		}
 	}
+	// Reuse account-level authorization, department/project validation and audit
+	// inside this same transaction, even before the target's first login.
+	for id, roles := range input.RoleUpdates {
+		members, readErr := organizationMemberList(r.Context(), tx, id)
+		if readErr != nil {
+			failOrganization(w, readErr)
+			return
+		}
+		if len(members) != 1 {
+			failOrganization(w, orgNotFound())
+			return
+		}
+		memberships := members[0].ProjectMemberships
+		for index := range memberships {
+			if memberships[index].ProjectID == project {
+				memberships[index].Roles = roles
+				memberships[index].Role = roles[0]
+			}
+		}
+		if _, err = a.saveOrganizationMember(r.Context(), tx, admin, id, organizationMemberPatch{ProjectMemberships: &memberships}); err != nil {
+			failOrganization(w, err)
+			return
+		}
+	}
 	after, err := listProjectMemberCandidates(r.Context(), tx, project)
 	if err == nil && (len(add) > 0 || len(remove) > 0) {
 		// 审计只记录成员 ID 和角色变化，不记录企业邮箱目录。
 		beforeRoles := map[string]*string{}
 		afterRoles := map[string]*string{}
+		projectRolesBefore := map[string][]string{}
+		projectRolesAfter := map[string][]string{}
 		for _, id := range append(append([]string{}, add...), remove...) {
 			beforeRoles[id] = candidates[id].Role
+			projectRolesBefore[id] = candidates[id].ProjectRoles
 		}
 		for _, item := range after {
 			if _, changed := beforeRoles[item.ID]; changed {
 				afterRoles[item.ID] = item.Role
+				projectRolesAfter[item.ID] = item.ProjectRoles
 			}
 		}
-		err = a.organizationAudit(r.Context(), tx, "project", project, "project_members_updated", beforeRoles, map[string]any{"addUserIds": add, "removeUserIds": remove, "roles": afterRoles})
+		err = a.organizationAudit(r.Context(), tx, "project", project, "project_members_updated", beforeRoles, map[string]any{"addUserIds": add, "removeUserIds": remove, "roles": afterRoles, "projectRolesBefore": projectRolesBefore, "projectRolesAfter": projectRolesAfter})
 	}
 	if err == nil {
 		err = tx.Commit()

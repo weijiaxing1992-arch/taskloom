@@ -423,7 +423,7 @@ func TestDatabaseScale20K(t *testing.T) {
 	} {
 		measure(entry.name, func() int {
 			request := httptest.NewRequest("GET", entry.path, nil)
-			request.Header.Set("X-DevFlow-Project", a.pid())
+			request.Header.Set("X-TaskLoom-Project", a.pid())
 			request.AddCookie(cookie)
 			w := httptest.NewRecorder()
 			a.scopedAPI().ServeHTTP(w, request)

@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="650" viewBox="0 0 1040 650" role="img" aria-labelledby="title desc">
-<title id="title">DevFlow 单节点部署拓扑</title><desc id="desc">客户端经 HTTPS 反向代理连接 Go 服务，本机 SQLite 保存业务和附件，一致性备份上传私有 OSS；云监控提供站外告警。</desc>
+<title id="title">TaskLoom 社区版单节点部署示意</title><desc id="desc">Vue 桌面与 React 手机工作台经 HTTPS 代理连接 Go 服务，本地 SQLite 保存业务和附件，一致性备份独立保存；代理、外部服务及告警需部署方配置。</desc>
 <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#64748b"/></marker></defs>
 <rect width="1040" height="650" rx="16" fill="#f8fafc"/>
 <g font-family="Arial,PingFang SC,sans-serif" text-anchor="middle" fill="#172b4d">
-<text x="520" y="42" font-size="22" font-weight="700">DevFlow · 单节点生产拓扑</text>
-<text x="520" y="68" font-size="13">当前可部署架构 · 云资源与外部通道需上线配置</text>
+<text x="520" y="42" font-size="22" font-weight="700">TaskLoom · 社区版单节点示意</text>
+<text x="520" y="68" font-size="13">部署示意，非验收结果 · 外部服务与监控需独立配置</text>
 <g fill="#fff" stroke="#cbd5e1"><rect x="245" y="95" width="550" height="55" rx="8"/><rect x="330" y="195" width="380" height="55" rx="8"/><rect x="240" y="298" width="560" height="96" rx="8"/><rect x="95" y="452" width="360" height="65" rx="8"/><rect x="620" y="452" width="325" height="65" rx="8"/><rect x="95" y="569" width="360" height="55" rx="8"/><rect x="620" y="569" width="325" height="55" rx="8"/></g>
-<text x="520" y="128" font-size="16">浏览器 / Flutter 测试客户端 / 授权 AI 客户端</text>
-<text x="520" y="229" font-size="16">DNS + HTTPS / Caddy</text>
-<text x="520" y="330" font-size="18" font-weight="700">ECS · Go API + Vue 静态资源</text><text x="520" y="357" font-size="14">权限 · 版本 · 限流 · REST / MCP</text><text x="520" y="380" font-size="13">需求 → 迭代 → 测试 → 缺陷 → 通知</text>
-<text x="275" y="478" font-size="16">本机 ESSD · SQLite + WAL</text><text x="275" y="500" font-size="13">需求 / 评论 / 附件 BLOB / 审计</text>
+<text x="520" y="128" font-size="16">Vue 桌面 / React 手机 / 授权集成客户端</text>
+<text x="520" y="229" font-size="16">DNS + HTTPS 反向代理</text>
+<text x="520" y="330" font-size="18" font-weight="700">自部署 Go API + Vue / React 资源</text><text x="520" y="357" font-size="14">权限 · 版本 · 限流 · REST / MCP</text><text x="520" y="380" font-size="13">需求 → 迭代 → 测试 → 缺陷 → 通知</text>
+<text x="275" y="478" font-size="16">本地磁盘 · SQLite + WAL</text><text x="275" y="500" font-size="13">需求 / 评论 / 附件 BLOB / 审计</text>
 <text x="782" y="478" font-size="16">受控出站 · 企微 / AI 服务</text><text x="782" y="500" font-size="13">独立密钥 · 最小权限 · 真实联调</text>
-<text x="275" y="593" font-size="16">一致性备份 → 私有 OSS</text><text x="275" y="614" font-size="12">独立恢复演练 · 不是自动高可用</text>
-<text x="782" y="602" font-size="16">CloudMonitor → 值班告警</text>
+<text x="275" y="593" font-size="16">一致性备份 → 独立备份位置</text><text x="275" y="614" font-size="12">独立恢复演练 · 不是自动高可用</text>
+<text x="782" y="602" font-size="16">外部健康监测 → 值班告警</text>
 <g fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"><path d="M520 150V191"/><path d="M520 250V294"/><path d="M370 394V422H275V448"/><path d="M675 394V422H782V448"/><path d="M275 517V565"/></g>
-<text x="608" y="178" font-size="12">HTTPS 443</text><text x="633" y="278" font-size="12">127.0.0.1:19080</text>
+<text x="608" y="178" font-size="12">HTTPS 443</text><text x="633" y="278" font-size="12">配置的回环地址</text>
 </g></svg>

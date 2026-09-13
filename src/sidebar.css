@@ -33,8 +33,13 @@
   width: 36px;
   height: 36px;
   border-radius: calc(var(--radius) + 2px);
-  background: linear-gradient(145deg, #2d6bda, #4f89ef);
-  box-shadow: 0 7px 16px color-mix(in srgb, #2762c5 24%, transparent);
+  overflow: hidden;
+  /* TaskLoom 研织图标是经过静态 SVG 校验的本地资源；以背景图展示时不改变
+     现有品牌链接和键盘可访问名称，也不会让原先的占位字母叠在图标上。 */
+  background: #507bfd url('./assets/taskloom-mark.svg') center / cover no-repeat;
+  box-shadow: 0 5px 12px color-mix(in srgb, #507bfd 22%, transparent);
+  color: transparent;
+  font-size: 0;
 }
 
 .app-shell .brand strong {
@@ -149,6 +154,100 @@
   padding-top: 18px;
 }
 
+/* 管理类页面访问频率较低，不再在侧栏底部连续占用多行。原有入口收敛到一个
+ * 原生 details 分组：键盘和辅助技术保留展开语义，且不依赖额外的浮层状态。 */
+.app-shell .management-nav {
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.app-shell .management-nav > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 9px 11px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--sidebar-foreground, var(--nav-text));
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 520;
+  list-style: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.app-shell .management-nav > summary::-webkit-details-marker { display: none; }
+.app-shell .management-nav > summary::marker { content: ''; }
+
+.app-shell .management-nav > summary:hover {
+  background: color-mix(in srgb, var(--sidebar-accent, var(--nav-hover)) 74%, transparent);
+  color: var(--ink);
+}
+
+.app-shell .management-nav > summary:focus-visible,
+.app-shell .management-nav-links a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.app-shell .management-nav[open] {
+  border-color: color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--background) 58%, transparent);
+}
+
+.app-shell .management-nav[open] > summary {
+  color: var(--sidebar-accent-foreground, var(--nav-selected-text));
+  font-weight: 650;
+}
+
+.app-shell .management-nav-chevron {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 150ms ease;
+}
+
+.app-shell .management-nav[open] .management-nav-chevron { transform: rotate(180deg); }
+
+.app-shell .management-nav-links {
+  display: grid;
+  gap: 2px;
+  padding: 2px 4px 6px;
+}
+
+.app-shell .management-nav-links a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  padding: 7px 8px;
+  border-radius: calc(var(--radius) - 3px);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 520;
+  text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.app-shell .management-nav-links a:hover {
+  background: color-mix(in srgb, var(--sidebar-accent, var(--nav-hover)) 70%, transparent);
+  color: var(--ink);
+}
+
+.app-shell .management-nav-links a.management-link-active {
+  background: var(--sidebar-accent, var(--nav-selected));
+  color: var(--sidebar-accent-foreground, var(--nav-selected-text));
+  font-weight: 650;
+}
+
+.app-shell .management-nav-links .svg-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
 .app-shell .brand-slogan {
   margin: 0 8px 14px;
   padding: 8px 10px;
@@ -204,7 +303,8 @@
 
 .app-shell .workspace > .topbar {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) minmax(220px, 360px) minmax(190px, 1fr);
+  /* 左侧只保留项目入口所需宽度，把多余空间优先让给真正的全局搜索。 */
+  grid-template-columns: minmax(168px, 320px) minmax(260px, 1fr) max-content;
   align-items: center;
   gap: 18px;
   min-height: var(--shell-topbar-height);
@@ -223,18 +323,23 @@
 }
 
 .app-shell .project-switcher {
+  display: flex;
+  align-items: center;
+  flex: 0 1 260px;
+  width: fit-content;
   min-width: 0;
-  max-width: 100%;
-  padding: 4px 7px 4px 4px;
-  border: 1px solid transparent;
+  max-width: min(100%, 260px);
+  padding: 0;
+  border: 0;
   border-radius: calc(var(--radius) - 2px);
-  transition: background-color 150ms ease, border-color 150ms ease;
+  background: transparent;
+  transition: color 150ms ease;
 }
 
 .app-shell .project-switcher:hover,
 .app-shell .project-switcher:focus-within {
-  border-color: color-mix(in srgb, var(--border) 92%, transparent);
-  background: var(--surface-subtle);
+  border-color: transparent;
+  background: transparent;
 }
 
 .app-shell .project-icon {
@@ -244,15 +349,30 @@
   font-weight: 700;
 }
 
-.app-shell .project-switcher select {
-  max-width: min(290px, 28vw);
+.app-shell .project-switcher .project-select {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--ink);
   font-size: 13px;
   font-weight: 650;
 }
 
+/* 超宽屏让项目入口继续保持紧凑，空出的列宽由居中的搜索入口使用。 */
+@media (min-width: 1400px) {
+  .app-shell .workspace > .topbar {
+    grid-template-columns: minmax(168px, 260px) minmax(260px, 1fr) max-content;
+  }
+}
+
 .app-shell .workspace > .topbar > .top-search-widget {
-  width: min(100%, 360px);
+  width: min(100%, 520px);
   min-width: 0;
   justify-self: center;
 }
@@ -434,6 +554,17 @@
     padding: 9px 8px;
   }
 
+  .app-shell .rail.rail-collapsed .management-nav > summary {
+    justify-content: center;
+    min-height: 42px;
+    padding: 9px 8px;
+  }
+
+  .app-shell .rail.rail-collapsed .management-nav-chevron,
+  .app-shell .rail.rail-collapsed .management-nav-links {
+    display: none;
+  }
+
   .app-shell .rail.rail-collapsed .global-nav em {
     position: absolute;
     top: 0;
@@ -474,12 +605,12 @@
   }
 
   .app-shell .workspace > .topbar {
-    grid-template-columns: minmax(175px, 1fr) minmax(200px, 300px) minmax(160px, 1fr);
+    grid-template-columns: minmax(160px, 220px) minmax(200px, 1fr) max-content;
     gap: 12px;
     padding-inline: 16px;
   }
 
-  .app-shell .project-switcher select {
+  .app-shell .project-switcher .project-select {
     max-width: 200px;
   }
 }
@@ -512,7 +643,11 @@
   }
 
   .app-shell .topbar-leading {
-    flex: 1;
+    flex: 0 1 auto;
+  }
+
+  .app-shell .workspace > .topbar > .top-search-widget {
+    flex: 1 1 260px;
   }
 
   .app-shell .top-actions {
@@ -533,9 +668,10 @@
 
   .app-shell .topbar-leading {
     min-width: 0;
+    flex: 1 1 auto;
   }
 
-  .app-shell .project-switcher select {
+  .app-shell .project-switcher .project-select {
     max-width: calc(100vw - 188px);
   }
 

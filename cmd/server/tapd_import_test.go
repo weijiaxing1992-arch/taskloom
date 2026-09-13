@@ -1,12 +1,70 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestTapdImportPreservesStructuredBodyAndIndependentImages(t *testing.T) {
+	a := fileSQLiteTestApp(t)
+	payload := tapdTestPayload()
+	image := rtPNG(t)
+	payload["descriptionDoc"] = rtDoc(
+		map[string]any{"type": "heading", "attrs": map[string]any{"level": 2}, "content": []any{rtText("导入规则")}},
+		rtParagraph(rtText("折行已恢复为完整段落。")),
+		rtPending("image", "TAPD-image-1-1.png", image),
+		map[string]any{"type": "orderedList", "attrs": map[string]any{"start": 3}, "content": []any{
+			map[string]any{"type": "listItem", "content": []any{rtParagraph(rtText("第三条规则的折行仍在同一项。"))}},
+			map[string]any{"type": "listItem", "content": []any{rtParagraph(rtText("第四条规则。"))}},
+		}},
+	)
+	payload["tapdImport"].(map[string]any)["warnings"] = []string{"第 2 页含表格或分栏，请核对原始 PDF。"}
+	body, _ := json.Marshal(payload)
+	w := apiRequest(a, "POST", "/api/requirements", "u_admin", projectID, string(body))
+	if w.Code != 201 {
+		t.Fatalf("import: %d %s", w.Code, w.Body.String())
+	}
+	var result Requirement
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := a.get(result.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Content []map[string]any `json:"content"`
+	}
+	if err = json.Unmarshal(stored.DescriptionDoc, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for i, kind := range []string{"heading", "paragraph", "image", "orderedList"} {
+		if len(doc.Content) != 4 || doc.Content[i]["type"] != kind {
+			t.Fatalf("structured body lost: %s", stored.DescriptionDoc)
+		}
+	}
+	if doc.Content[3]["attrs"].(map[string]any)["start"] != float64(3) || len(doc.Content[3]["content"].([]any)) != 2 {
+		t.Fatalf("list numbering/items changed: %s", stored.DescriptionDoc)
+	}
+	if bytes.Contains(stored.DescriptionDoc, []byte(`"data"`)) || bytes.Contains(stored.DescriptionDoc, []byte("TAPD-page-")) {
+		t.Fatal("pending binary or page screenshot retained in body")
+	}
+	var actual []byte
+	if err = a.db.QueryRow(`SELECT content FROM requirement_attachments WHERE requirement_id=? AND name='TAPD-image-1-1.png'`, stored.ID).Scan(&actual); err != nil || !bytes.Equal(actual, image) {
+		t.Fatalf("independent original image changed: %v", err)
+	}
+	if rtCount(t, a, "requirement_attachments") != 3 {
+		t.Fatal("expected original image, source PDF, and mapping only")
+	}
+	var archive []byte
+	if err = a.db.QueryRow(`SELECT content FROM requirement_attachments WHERE requirement_id=? AND content_type='application/json'`, stored.ID).Scan(&archive); err != nil || !bytes.Contains(archive, []byte("表格或分栏")) {
+		t.Fatalf("layout warning not archived: %v", err)
+	}
+}
 
 func tapdTestPayload() map[string]any {
 	return map[string]any{"title": "TAPD 迁移测试", "description": "完整正文", "tapdImport": map[string]any{"workspaceId": "32131908", "sourceId": "1132131908001008228", "fileName": "需求.pdf", "pdfBase64": base64.StdEncoding.EncodeToString([]byte("%PDF-1.7\nfixture\n%%EOF\n")), "pageCount": 2, "fields": []map[string]string{{"label": "处理人", "value": "原始姓名"}, {"label": "未知字段", "value": "原值不能丢失"}, {"label": "创建人", "value": "来源创建人"}}, "rawText": "原文", "warnings": []string{"请核对"}, "reviewed": true}}

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import * as Vue from 'vue'
+import { parse, compileStyle } from 'vue/compiler-sfc'
 import { themedColor, themePalettePlugin } from './theme-palette.mjs'
 const read = path => readFileSync(new URL('../'+path, import.meta.url), 'utf8')
 function evaluate(source, imports, globals = {}) {
@@ -75,9 +76,41 @@ await test('boards, settings surfaces and native menus use defined semantic toke
  assert.match(css,/\[style\*="--tag-dark-fg"\]\{--tag-foreground:var\(--tag-dark-fg\)\}/)
  for(const selector of ['.requirement-status-board>section','.defect-status-board>section','.iteration-board .board-col','.requirement-board-card','.application-settings .workflow-matrix .allowed-state'])assert(css.includes(selector),selector)
  assert.match(css,/--control-selected:#6255d9;--control-selected-text:#fff/)
- // Reka wraps the content, so inherited scoped root styles cannot set its flex layout.
- const transition=read('src/components/RequirementTransition.vue')
- assert.match(transition,/class="transition-menu flex flex-col overflow-hidden [^"]*p-0"/)
- assert.match(transition,/\.transition-options\{min-height:0;flex:1;/)
+ // Compile the actual scoped styles, then resolve repeated declarations for the
+ // same selector in source order. Formatting/property order is not a scroll
+ // contract; min-height, flex shrink, root bounds and overflow are.
+ const {descriptor}=parse(read('src/components/RequirementTransition.vue'))
+ const roots=descriptor.styles.map(style=>{
+  const compiled=compileStyle({source:style.content,filename:'RequirementTransition.vue',id:'data-v-theme-transition',scoped:style.scoped})
+  assert.deepEqual(compiled.errors,[])
+  return compiled.rawResult.root
+ })
+ function declarations(selector){
+  const values=new Map()
+  for(const root of roots)root.walkRules(rule=>{
+   if(rule.selector.replace(/\s+/g,'')!==selector.replace(/\s+/g,''))return
+   for(const decl of rule.nodes){
+    if(decl.type!=='decl')continue
+    const previous=values.get(decl.prop)
+    if(!previous?.important||decl.important)values.set(decl.prop,decl)
+   }
+  })
+  return Object.fromEntries([...values].map(([key,decl])=>[key,decl.value]))
+ }
+ // The Reka content root must match without inheriting the parent's scope id.
+ const panel=declarations('.transition-menu[data-slot="popover-content"]')
+ assert.equal(panel.display,'flex');assert.equal(panel['flex-direction'],'column')
+ assert.equal(panel['min-height'],'0');assert.equal(panel.overflow,'hidden')
+ assert.match(panel['max-height'],/--reka-popover-content-available-height/)
+ assert.match(panel['max-height'],/100dvh\s*-\s*24px/)
+ const options=declarations('.transition-options[data-v-theme-transition]')
+ assert.equal(options['min-height'],'0')
+ assert(['1','1 1 0%','1 1 auto'].includes(options.flex),'options must grow and shrink in the bounded flex content')
+ assert.equal(options['max-height'],'none','the root owns the viewport limit')
+ assert.equal(options['overflow-y']||options.overflow,'auto')
+ assert.equal(options['overscroll-behavior'],'contain')
+ for(const selector of ['.transition-menu>header[data-v-theme-transition]','.transition-menu>.transition-search[data-v-theme-transition]']){
+  assert.equal(declarations(selector).flex,'none','fixed header/search must not compete with option scrolling')
+ }
 })
 console.log(`Passed ${count} theme tests.`)

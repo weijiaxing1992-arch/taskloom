@@ -41,7 +41,9 @@ func baseWorkQueryFields() map[string]string {
 	for _, key := range []string{"code", "title", "type", "category", "sprint", "status", "priority", "discipline", "remarks", "description", "acceptance"} {
 		fields[key] = "text"
 	}
-	for _, key := range []string{"parentId", "progress", "estimatedHours", "actualHours", "weightTotal"} {
+	// 依赖状态不是可写数据库字段，而是列表范围内由已授权依赖关系计算的只读状态。
+	fields["dependencyState"] = "text"
+	for _, key := range []string{"parentId", "progress", "estimatedHours", "actualHours", "weightTotal", "iterationDelayCount"} {
 		fields[key] = "number"
 	}
 	for _, key := range []string{"startDate", "endDate", "createdAt", "updatedAt"} {
@@ -135,12 +137,42 @@ func (a *App) parseRequirementListQuery(r *http.Request) (*workItemQuery, error)
 	}
 	return query, nil
 }
+
+// requirementListNeedsDependencyState 保持普通列表查询的读取成本不变。
+// 依赖状态只在被显式用于筛选或排序时批量计算，分页仍在完整筛选结果之后执行。
+func requirementListNeedsDependencyState(query *workItemQuery) bool {
+	if query.Sort == "dependencyState" {
+		return true
+	}
+	for _, filter := range query.Filters {
+		if filter.Field == "dependencyState" {
+			return true
+		}
+	}
+	return false
+}
+
 func validateWorkFilter(filter workItemFilter, fields map[string]string) error {
 	kind, ok := fields[filter.Field]
 	if !ok {
 		return workQueryValidationError("筛选字段无效或已停用")
 	}
 	op := filter.Operator
+	if filter.Field == "dependencyState" {
+		// 依赖状态遵守通用筛选契约：为空表示没有当前账号可见的活动依赖（clear），
+		// 非空表示至少有一条可见依赖。其余比较只能使用已定义的状态枚举。
+		if op == "is_empty" || op == "not_empty" {
+			if filter.Value != nil {
+				return workQueryValidationError("空值条件不能携带筛选值")
+			}
+			return nil
+		}
+		value, valid := filter.Value.(string)
+		if !valid || !validChoice(value, []string{"clear", "blocked", "blocking", "related"}) || (op != "eq" && op != "neq") {
+			return workQueryValidationError("依赖状态筛选值无效")
+		}
+		return nil
+	}
 	if op == "is_empty" || op == "not_empty" {
 		if filter.Value != nil {
 			return workQueryValidationError("空值条件不能携带筛选值")
@@ -309,6 +341,17 @@ func compareWorkValue(a, b any, kind string) int {
 }
 func matchesWorkItem(record map[string]any, filter workItemFilter, kind string, timezone *time.Location) bool {
 	value := workValue(record, filter.Field)
+	if filter.Field == "dependencyState" {
+		// 依赖状态在本次查询中一定会被计算，clear 是“没有可见依赖”的语义空值。
+		// 对于无权查看的跨项目关联仍维持 clear，不能暴露其存在。
+		state, _ := value.(string)
+		if filter.Operator == "is_empty" {
+			return state == "" || state == "clear"
+		}
+		if filter.Operator == "not_empty" {
+			return state != "" && state != "clear"
+		}
+	}
 	empty := emptyWorkValue(value)
 	if filter.Operator == "is_empty" {
 		return empty

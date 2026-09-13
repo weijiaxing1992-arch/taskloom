@@ -7,6 +7,7 @@ import organization from './locales/organization.en'
 import workload from './locales/workload.en'
 import wecom from './locales/wecom.en'
 import wechat from './locales/wechat.en'
+import wecomCustomApp from './locales/wecomCustomApp.en'
 import topSearch from './locales/topSearch.en'
 import ai from './locales/ai.en'
 import enhancements from './locales/enhancements.en'
@@ -30,6 +31,7 @@ import requirementExport from './locales/requirementExport.en'
 import delivery from './locales/delivery.en'
 import tapd from './locales/tapd.en'
 import usability from './locales/usability.en'
+import myWork from './locales/myWork.en'
 
 export type Locale = 'zh-CN' | 'en-US'
 export const supportedLocales = ['zh-CN', 'en-US'] as const
@@ -41,7 +43,7 @@ function initialLocale(): Locale {
 }
 export const locale = ref<Locale>(initialLocale())
 export const timezone = ref('Asia/Shanghai')
-export const englishMessages: Record<string, string> = { ...core, ...modules, ...requirements, ...settings, ...organization, ...workload, ...wecom, ...wechat, ...topSearch, ...ai, ...enhancements, ...collaboration, ...savedViews, ...calendar, ...workloadTrends, ...membersPicker, ...fieldDeletion, ...audit, ...navigation, ...automation, ...testingAI, ...testing, ...notifications, ...integrations, ...help, ...memberBulk, ...projectMembers, ...requirementExport, ...delivery, ...tapd, ...usability }
+export const englishMessages: Record<string, string> = { ...core, ...modules, ...requirements, ...settings, ...organization, ...workload, ...wecom, ...wechat, ...wecomCustomApp, ...topSearch, ...ai, ...enhancements, ...collaboration, ...savedViews, ...calendar, ...workloadTrends, ...membersPicker, ...fieldDeletion, ...audit, ...navigation, ...automation, ...testingAI, ...testing, ...notifications, ...integrations, ...help, ...memberBulk, ...projectMembers, ...requirementExport, ...delivery, ...tapd, ...usability, ...myWork }
 
 /** Translate system copy only. Business content must never pass through this function. */
 export function t(source: string, params: Record<string, string | number> = {}): string {

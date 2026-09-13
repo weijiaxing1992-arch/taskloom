@@ -27,6 +27,15 @@ work/web-desktop-*/
 
 /web/
 /server
+/work/
+*.db
+*.db-wal
+*.db-shm
+*.wecom-key
+*.pem
+*.key
+.env.*
+!.env.example
 *.tar.gz
 *.zip
 *.dmg

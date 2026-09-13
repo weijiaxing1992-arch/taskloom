@@ -4,6 +4,8 @@ export interface DesktopSession { tenant?: { id: string }; user?: { id: string; 
 type API = (path: string, options?: RequestInit) => Promise<any>
 type Checkpoint = { time: number; ids: number[] }
 type Bridge = { postMessage(message: unknown): Promise<any> }
+/** 统一网页 Notification API 与 macOS 容器返回的授权状态，未知返回不能误当作已授权。 */
+export type DesktopPermission = 'granted' | 'denied' | 'default' | 'unsupported' | 'error'
 declare global { interface Window { webkit?: { messageHandlers?: { devflowDesktop?: Bridge } }; devflowDesktopAgent?: boolean } }
 export const nativeBridge = () => window.webkit?.messageHandlers?.devflowDesktop
 export function desktopScope(session: DesktopSession | null): string {
@@ -72,11 +74,41 @@ export function ringNotification() {
   }
   return true
 }
-export async function desktopPermission(request = false): Promise<string> {
-  const bridge = nativeBridge()
-  if (bridge) return String(await bridge.postMessage({ action: request ? 'requestPermission' : 'permission' }))
-  if (!window.isSecureContext || !('Notification' in window)) return 'unsupported'
-  return request ? Notification.requestPermission() : Notification.permission
+function normalizeDesktopPermission(value: unknown): DesktopPermission {
+  const record = value && typeof value === 'object' ? value as Record<string, unknown> : null
+  const raw = typeof value === 'string' ? value : record?.permission ?? record?.status ?? record?.result
+  const permission = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  return permission === 'granted' || permission === 'denied' || permission === 'default' ? permission : 'error'
+}
+/**
+ * 查询或请求系统通知授权。授权请求只能由页面上的直接用户操作调用；本函数不会在后台轮询时请求权限。
+ * 原生桥偶发返回对象时也只识别明确的 granted/denied/default，避免把未知结果当成已授权。
+ */
+export async function desktopPermission(request = false): Promise<DesktopPermission> {
+  try {
+    const bridge = nativeBridge()
+    if (bridge) return normalizeDesktopPermission(await bridge.postMessage({ action: request ? 'requestPermission' : 'permission' }))
+    if (typeof window === 'undefined' || !window.isSecureContext || typeof Notification === 'undefined') return 'unsupported'
+    return normalizeDesktopPermission(request ? await Notification.requestPermission() : Notification.permission)
+  } catch {
+    return 'error'
+  }
+}
+/** 不能绕过浏览器或 macOS 授权；这里只给出当前状态对应的可执行恢复步骤。 */
+export function desktopPermissionGuidance(permission: DesktopPermission, native = !!nativeBridge()): string {
+  if (permission === 'granted') return '系统通知权限已允许。开启提醒后，新产生的通知会在此浏览器或客户端显示。'
+  if (permission === 'default') return native
+    ? '尚未授权 TaskLoom 桌面客户端。点击“开启系统提醒”，并在 macOS 弹窗中选择“允许”。'
+    : '尚未授权系统通知。点击“开启系统提醒”后，请在浏览器弹窗中选择“允许”。'
+  if (permission === 'denied') return native
+    ? 'TaskLoom 桌面客户端的通知权限已被拒绝。请打开“系统设置 → 通知 → TaskLoom”，开启“允许通知”和声音；回到此页后点击“重新检查授权”。'
+    : '此站点的通知权限已被浏览器拒绝。请点击地址栏左侧的站点控制图标 → 通知 → 允许；若仍无横幅，请在“系统设置 → 通知”中为当前浏览器开启通知和声音，然后点击“重新检查授权”。'
+  if (permission === 'unsupported') return native
+    ? '当前桌面客户端无法调用 macOS 通知服务。请重启客户端后重试，或检查“系统设置 → 通知”。'
+    : '当前浏览器或访问地址不支持系统通知。请使用受支持的桌面浏览器访问 HTTPS 地址，或使用 TaskLoom 桌面客户端。'
+  return native
+    ? '暂时无法读取 TaskLoom 桌面客户端的通知权限。请检查网络与“系统设置 → 通知”，然后点击“重新检查授权”。'
+    : '暂时无法读取浏览器通知权限。请刷新页面后重试；如果持续失败，请检查浏览器的站点通知设置。'
 }
 function state(message: string) { window.dispatchEvent(new CustomEvent('devflow-desktop-status', { detail: message })) }
 export async function openDesktopNotice(api: API, scope: string, item: Pick<DesktopNotice, 'id' | 'url' | 'projectId'>) {
@@ -87,7 +119,7 @@ export async function openDesktopNotice(api: API, scope: string, item: Pick<Desk
   if (desktopScope(await api('/session')) !== scope) throw Error('请使用收到此通知的账号登录后再打开')
   // 点击时重新验证通知和项目权限；不相信系统通知中缓存的旧权限。
   await api(`/notifications/${item.id}`, { method: 'PATCH', body: JSON.stringify({ read: true }) })
-  await api(`/projects/${encodeURIComponent(item.projectId)}/visit`, { method: 'POST', headers: { 'X-DevFlow-Project': item.projectId } })
+  await api(`/projects/${encodeURIComponent(item.projectId)}/visit`, { method: 'POST', headers: { 'X-TaskLoom-Project': item.projectId } })
   if (desktopScope(await api('/session')) !== scope) throw Error('账号已切换，请重新打开通知')
   const url = new URL(target, location.origin)
   url.searchParams.set('project', item.projectId)
@@ -100,7 +132,11 @@ export async function openDesktopNotice(api: API, scope: string, item: Pick<Desk
 export function startDesktopNotifications(api: API, session: () => DesktopSession | null) {
   let stopped = false, busy = false, currentScope = '', generation = 0
   const delivered = new Set<Notification>()
-  const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('devflow-desktop-sound-v1')
+  // 同一账号可能同时在多个浏览器标签页中打开。轮询负责兜底，频道只负责把
+  // 当前标签页已知的“有新消息”即时唤醒给其它页面，避免等到后台定时器恢复。
+  // 消息中不携带通知正文、链接或身份凭据，实际内容仍由各页使用自己的 HttpOnly
+  // 会话向服务端读取并进行权限校验。
+  const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('devflow-desktop-notification-v1')
   async function playShared(scope: string, id: number) {
     if (stopped || nativeBridge() || desktopScope(session()) !== scope || !desktopPreferences(scope).enabled || !desktopPreferences(scope).sound || !audio || audio.state !== 'running') return
     const play = () => {
@@ -110,7 +146,11 @@ export function startDesktopNotifications(api: API, session: () => DesktopSessio
     if (navigator.locks) await navigator.locks.request(prefix(scope) + ':sound', { ifAvailable: true }, lock => { if (lock) play() })
     else play()
   }
-  if (channel) channel.onmessage = event => { const item = event.data; if (typeof item?.scope === 'string' && Number.isSafeInteger(item?.id)) void playShared(item.scope, item.id) }
+  if (channel) channel.onmessage = event => {
+    const item = event.data
+    if (item?.type === 'sync' && typeof item.scope === 'string' && item.scope === desktopScope(session())) { void tick(); return }
+    if ((item?.type === 'sound' || !item?.type) && typeof item?.scope === 'string' && Number.isSafeInteger(item?.id)) void playShared(item.scope, item.id)
+  }
   const gesture = () => { const prefs = desktopPreferences(desktopScope(session())); if (prefs.enabled && prefs.sound && !nativeBridge()) void unlockNotificationSound().catch(() => {}) }
   const alive = (scope: string, version: number) => !stopped && version === generation && desktopScope(session()) === scope
   async function clear() {
@@ -161,7 +201,7 @@ export function startDesktopNotifications(api: API, session: () => DesktopSessio
           if (!alive(scope, version)) { await clear(); return }
           ack.add(item.id); write(ackKey, [...ack].slice(-10000))
           if (preferences.sound && !sounded) {
-            if (!nativeBridge()) { await playShared(scope, item.id); channel?.postMessage({scope,id:item.id}) }
+            if (!nativeBridge()) { await playShared(scope, item.id); channel?.postMessage({ type: 'sound', scope, id: item.id }) }
             sounded = true
           }
         }
@@ -183,16 +223,24 @@ export function startDesktopNotifications(api: API, session: () => DesktopSessio
     if (payload?.scope && payload?.id) void openDesktopNotice(api, payload.scope, payload).catch(error => state(error.message))
   }
   const settings = () => { if (!desktopPreferences(desktopScope(session())).enabled) void clear(); void tick() }
+  const refresh = () => {
+    const scope = desktopScope(session())
+    // 本页的业务动作和后台同步都会触发该事件；其它标签页无需等待下一轮 5 秒轮询。
+    if (scope) channel?.postMessage({ type: 'sync', scope })
+    void tick()
+  }
+  const visible = () => { if (document.visibilityState === 'visible') refresh() }
   const revoked = ['devflow-auth-session-ended', 'devflow-auth-expired', 'devflow-identity-changed', 'devflow-account-disabled', 'devflow-password-change-required']
   revoked.forEach(name => window.addEventListener(name, invalidate))
   window.addEventListener('devflow-desktop-open', opened)
   window.addEventListener('devflow-desktop-settings', settings)
   window.addEventListener('storage', settings)
-  window.addEventListener('focus', tick)
-  window.addEventListener('devflow-notifications-changed', tick)
+  window.addEventListener('focus', refresh)
+  document.addEventListener('visibilitychange', visible)
+  window.addEventListener('devflow-notifications-changed', refresh)
   window.addEventListener('pointerdown', gesture)
   window.addEventListener('keydown', gesture)
   const timer = setInterval(tick, 5000)
   void tick()
-  return () => { stopped = true; invalidate(); channel?.close(); clearInterval(timer); revoked.forEach(name => window.removeEventListener(name, invalidate)); window.removeEventListener('devflow-desktop-open', opened); window.removeEventListener('devflow-desktop-settings', settings); window.removeEventListener('storage', settings); window.removeEventListener('focus', tick); window.removeEventListener('devflow-notifications-changed', tick); window.removeEventListener('pointerdown', gesture); window.removeEventListener('keydown', gesture) }
+  return () => { stopped = true; invalidate(); channel?.close(); clearInterval(timer); revoked.forEach(name => window.removeEventListener(name, invalidate)); window.removeEventListener('devflow-desktop-open', opened); window.removeEventListener('devflow-desktop-settings', settings); window.removeEventListener('storage', settings); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', visible); window.removeEventListener('devflow-notifications-changed', refresh); window.removeEventListener('pointerdown', gesture); window.removeEventListener('keydown', gesture) }
 }

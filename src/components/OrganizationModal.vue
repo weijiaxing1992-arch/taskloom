@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { t } from '../i18n'
 import { useSettingsDialog } from './settingsScope'
 import { Button } from './ui/button'
-const props=defineProps<{title:string;busy?:boolean;wide?:boolean}>()
+const props=defineProps<{title:string;busy?:boolean;wide?:boolean;presentation?:'drawer'|'confirmation'}>()
 const emit=defineEmits<{(event:'close'):void}>()
 const opened=ref(false)
 const modal=useSettingsDialog(opened,close)
@@ -11,7 +11,7 @@ onMounted(()=>{opened.value=true})
 function close(){if(!props.busy)emit('close')}
 </script>
 <template>
-  <div class="org-modal-shade" @click.self="close"><section ref="modal" class="org-modal" :class="{'org-modal-wide':wide}" tabindex="-1" role="dialog" aria-modal="true" :aria-label="title"><header><h2>{{title}}</h2><Button type="button" variant="ghost" size="icon" :disabled="busy" :aria-label="t('关闭')" @click="close">×</Button></header><div class="org-modal-body"><slot /></div><footer v-if="$slots.footer"><slot name="footer" /></footer></section></div>
+  <div class="org-modal-shade" :class="{'slide-panel-shade':presentation!=='confirmation'}" @click.self="close"><section ref="modal" class="org-modal" :class="{'org-modal-wide':wide}" tabindex="-1" role="dialog" aria-modal="true" :aria-label="title"><header><h2>{{title}}</h2><Button type="button" variant="ghost" size="icon" :disabled="busy" :aria-label="t('关闭')" @click="close">×</Button></header><div class="org-modal-body"><slot /></div><footer v-if="$slots.footer"><slot name="footer" /></footer></section></div>
 </template>
 <style scoped>
 /* 弹窗须自带桌面布局，不能依赖企业管理路由按需加载的样式。 */

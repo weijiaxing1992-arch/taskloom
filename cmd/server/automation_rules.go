@@ -745,6 +745,7 @@ func (a *App) automationRulePreview(ctx context.Context, q stateStore, rule Auto
 		if err := rows.Scan(&item.ID, &item.Code, &item.Title, &item.Status); err != nil {
 			return preview, err
 		}
+		item.Code = requirementDisplayCode(item.ID, item.Code)
 		preview.SampleItems = append(preview.SampleItems, item)
 	}
 	return preview, rows.Err()
@@ -911,6 +912,7 @@ func (a *App) executeRequirementStatusAutomationRules(ctx context.Context, tx *s
 }
 
 func (a *App) executeAutomationRule(ctx context.Context, tx *sql.Tx, rule AutomationRule, eventID int64, x *Requirement, from, now string) error {
+	normalizeRequirementCode(x)
 	recipients, err := a.automationRuleRecipients(ctx, tx, rule, x)
 	if err != nil {
 		return err

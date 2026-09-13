@@ -3,9 +3,11 @@ import { locale, t } from './i18n'
 // 它只是并发身份校验提示，不是凭据。真实身份及权限始终由服务端会话校验。
 let expectedUser = ''
 let identityGeneration = 0
+// Only share concurrent reads, never retain downloaded private files after completion.
+const attachmentReads = new Map<string, Promise<Blob>>()
 
 export class APIError extends Error {
-  constructor(message: string, public status: number, public code = '') { super(message) }
+  constructor(message: string, public status: number, public code = '', public details?: { challenge?: unknown; retryAfterSeconds?: unknown }) { super(message) }
 }
 
 async function request(path: string, options: RequestInit = {}): Promise<Response> {
@@ -14,9 +16,9 @@ async function request(path: string, options: RequestInit = {}): Promise<Respons
   // 上传附件时让浏览器生成 multipart boundary，不能强行写成 JSON Content-Type。
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   // 本地项目 ID 仅用于选择请求范围；缓存可被修改，后端必须再次检查项目成员权限。
-  if (!headers.has('X-DevFlow-Project')) headers.set('X-DevFlow-Project', localStorage.getItem('devflow-project') || 'prj_orbit')
+  if (!headers.has('X-TaskLoom-Project')) headers.set('X-TaskLoom-Project', localStorage.getItem('devflow-project') || 'prj_orbit')
   if (!headers.has('Accept-Language')) headers.set('Accept-Language', locale.value)
-  if (expectedUser && path !== '/session' && (!path.startsWith('/auth/') || path === '/auth/initial-password')) headers.set('X-DevFlow-Expected-User', expectedUser)
+  if (expectedUser && path !== '/session' && (!path.startsWith('/auth/') || path === '/auth/initial-password')) headers.set('X-TaskLoom-Expected-User', expectedUser)
   let res: Response
   try {
     // 会话使用同源 HttpOnly Cookie，前端不读取或持久化会话密钥，也不自动重试写请求。
@@ -34,18 +36,28 @@ async function request(path: string, options: RequestInit = {}): Promise<Respons
       if (data?.error?.code === 'account_disabled') window.dispatchEvent(new CustomEvent('devflow-account-disabled'))
       if (data?.error?.code === 'password_change_required') window.dispatchEvent(new CustomEvent('devflow-password-change-required', { detail: { userId: requestUser } }))
       if (data?.error?.code === 'identity_changed' || data?.error?.code === 'impersonation_expired') window.dispatchEvent(new CustomEvent('devflow-identity-changed', { detail: data.error.code }))
-      if (res.status === 401 && path !== '/auth/login') window.dispatchEvent(new CustomEvent('devflow-auth-expired'))
+      if (res.status === 401 && path !== '/auth/login') window.dispatchEvent(new CustomEvent('devflow-auth-expired', { detail: { path } }))
     }
-    throw new APIError(data?.error?.message || t('请求失败'), res.status, data?.error?.code || '')
+    throw new APIError(data?.error?.message || t('请求失败'), res.status, data?.error?.code || '', path === '/auth/login' ? { challenge: data?.error?.challenge, retryAfterSeconds: data?.error?.retryAfterSeconds } : undefined)
   }
   return res
 }
 
 export async function apiDownload(path: string, options: RequestInit = {}): Promise<Blob> {
   const generation = identityGeneration
-  const blob = await (await request(path, options)).blob()
-  assertRequestGeneration(generation)
-  return blob
+  const headers = new Headers(options.headers)
+  const project = headers.get('X-TaskLoom-Project') || localStorage.getItem('devflow-project') || 'prj_orbit'
+  const share = !options.signal && (!options.method || options.method === 'GET') && !options.body
+  const key = JSON.stringify([generation, expectedUser, project, locale.value, path, [...headers.entries()]])
+  if (share && attachmentReads.has(key)) return attachmentReads.get(key)!
+  const pending = (async () => {
+    const blob = await (await request(path, options)).blob()
+    assertRequestGeneration(generation)
+    return blob
+  })()
+  if (share) attachmentReads.set(key, pending)
+  try { return await pending }
+  finally { if (attachmentReads.get(key) === pending) attachmentReads.delete(key) }
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {

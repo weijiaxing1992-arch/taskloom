@@ -1,5 +1,17 @@
 # TaskLoom 内部 API 参考
 
+## 需求分享与专业描述优化（2026-09-12）
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET / POST | `/api/ai/defect-refine` | 项目读 / AI 生成权限 | POST `{description,confirmed:true,forceNew?}`，专业缺陷优化。返回 `preview`：background（描述）、rules（复现步骤）、exceptions（实际结果）、acceptance（预期和回归）、questions（最多 3 个追问）。不接受 requirementId、不访问缺陷附件、不自动保存，复用企业模型、限流及版本校验。 |
+| GET | `/api/requirement-shares?requirementId=1` | 当前项目可读，禁止代访问 | 返回本人该需求的有效公开分享编号、创建和过期时间，不返回令牌。 |
+| POST | `/api/requirement-shares?requirementId=1` | 当前项目写权限，禁止代访问 | `{confirmed:true}` 创建 7 天有效的正文快照；返回 `id,path,expiresAt`。仅首次返回含随机令牌的路径。默认登录分享直接使用带项目参数的需求地址，不创建公开令牌。 |
+| DELETE | `/api/requirement-shares?requirementId=1&shareId=1` | 分享创建者、当前项目写权限 | 撤销本人分享，重复操作安全。 |
+| GET | `/api/public/requirement-shares/{token}` | 持有有效公开令牌 | 不需要 Cookie，返回标题、描述文字、验收标准、创建和过期时间。没有内部评论、人员、附件下载或写权限。快照不随需求后续修改更新；过期、撤销、需求删除、创建者停用或失去项目访问权后失效。 |
+
+公开分享仅存令牌 SHA-256，令牌使用 32 字节密码学随机数。每人最多 100 个有效链接。公开响应禁止缓存和搜索索引。配置反向代理时不要在访问日志记录完整分享令牌。分享页面以文本安全呈现，不执行 HTML 或加载外部图片；正文敏感信息须由发布人确认。
+
 ## 微信扫码登录与绑定
 
 | 方法 | 路径 | 权限 | 说明 |
@@ -20,6 +32,19 @@
 登录发起按可信连接 IP 每分钟 60 次；绑定/解绑密码确认按账号与连接 IP 每分钟 10 次，错误密码也计数，超限 429。反向代理共享连接 IP 的部署应另配可信边缘限流，不得直接信任客户端伪造的转发头。跨域或缺失 Origin 的写请求拒绝（403）；普通成员不能读取或修改管理员配置（403）。
 
 本轮接口属于 Web 会话边界，不属于开放 REST/MCP Token 权限，不支持第三方通过 Bearer 给人员代绑微信。
+
+## 企业微信自建应用配置
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/organization/wecom-app` | 企业管理员，禁止代访问 | 返回掩码配置、`notificationDeliveryEnabled`、`deliveryReady`、`externalCallsEnabled`、`providerMode`、安全投递统计与最近状态；不返回应用 Secret、企业微信 UserId 或令牌。 |
+| PATCH | `/api/organization/wecom-app` | 企业管理员，禁止代访问 | 同源 JSON `{corpId,agentId,origin,verifyFilename,secret?,clearSecret?,enabled,notificationDeliveryEnabled,version}`。只能使用 HTTPS 无路径正式域名及 `WW_verify_*.txt` 文件名；版本冲突返回 409。 |
+| GET | `/api/profile/wecom-app` | 本人，禁止代访问 | 返回本人是否有企业微信绑定及配置是否就绪，不返回企业微信 UserId、Secret 或令牌。 |
+| POST | `/api/profile/wecom-app/bind` | 当前已登录本人，禁止代访问 | 同源 JSON `{password}`，验证本人当前密码；账号须启用、允许操作且不处于强制改密状态。仅 `DEVFLOW_WECOM_MODE=live`、管理员完成并启用应用配置、请求 Origin 与配置正式域名一致时发起授权。返回官方授权地址 `url` 和 `expiresIn:300`，设置 5 分钟 Secure/HttpOnly/Lax 状态 Cookie。已绑定、模拟模式、配置未就绪或正式域名不匹配返回 409；密码无效返回 403。不接受指定用户 ID 或企业微信 UserId。 |
+| POST | `/api/profile/wecom-app/unbind` | 当前已登录本人，禁止代访问 | 同源 JSON `{password}`，验证本人当前密码及可操作账号状态后删除本人企业微信绑定，将本人的 `pending`／`retry` 应用投递任务标记为 `skipped`（`binding_removed`），记录解绑审计并返回 `{bound:false}`。不要求 live 模式，不接受目标用户参数；不修改其他成员绑定，也不撤销站点登录会话。 |
+| GET | `/api/auth/wecom/callback` | 一次性 state 与原登录会话 | 消费 5 分钟 Secure/HttpOnly/Lax Cookie 绑定的 state；仅 live 模式下，校验原账号、会话、应用配置版本及禁止代访问后，向企业微信官方接口兑换 `code` 获取 UserId；事务内再核验账号、会话、密码摘要及配置后建立绑定。不创建站点登录会话；绑定流程固定 303 回到 `/profile?tab=wecom-app&wecom={结果}`。无完整绑定上下文的历史 state 不会升级为真实绑定。 |
+
+自建应用 Secret 使用与 AI、机器人、个人微信登录均不同的 AES-GCM AAD，读取和审计中只显示配置状态。仅企业管理员可保存；配置变更会作废未完成 state，已有绑定时拒绝直接更换 CorpID 或 AgentId。`DEVFLOW_WECOM_MODE` 默认 `mock`，不会调用企业微信真实接口；显式设置为 `live` 且配置及绑定就绪后，支持官方身份兑换与站内通知的应用消息投递。不会根据邮箱、姓名或昵称猜测身份，也不会自动开户。绑定／解绑写请求必须提供本站 Origin 和 `application/json`；跨站或缺失 Origin 返回 403，非 JSON 返回 415。此处均为站点本人会话接口，不向开放 API Bearer 凭证提供代绑能力。完整准备、投递边界与上线验收要求见 [企业微信自建应用配置与安全边界](wecom-custom-app.md)。
 
 ## AI 可读导出与 Markdown 结构
 
@@ -61,8 +86,8 @@
 | 项目 | 规范 |
 | --- | --- |
 | 登录身份 | `POST /api/auth/login` 后由浏览器维护 HttpOnly 会话 Cookie；请求使用同源凭据。退出、停用或移除成员会使会话失效。 |
-| 项目选择 | 项目业务接口使用 `X-DevFlow-Project: <projectId>`；建议始终显式传递，不依赖演示环境的默认项目。 |
-| 多标签页身份检查 | `X-DevFlow-Expected-User: <userId>` 应使用当前 `/api/session` 返回值。与会话不一致时返回 `409 identity_changed`。首次改密必须传此头。 |
+| 项目选择 | 项目业务接口使用 `X-TaskLoom-Project: <projectId>`；建议始终显式传递，不依赖演示环境的默认项目。 |
+| 多标签页身份检查 | `X-TaskLoom-Expected-User: <userId>` 应使用当前 `/api/session` 返回值。与会话不一致时返回 `409 identity_changed`。首次改密必须传此头。 |
 | 企业接口 | `/api/organization/...`、个人企业微信配置和企业工作量报表不依赖当前项目选择，但分别复核企业权限。 |
 | 项目生命周期 | `/api/projects` 及子资源按目标项目独立鉴权；归档项目不允许正常业务读写。 |
 | 语言 | `Accept-Language` 支持 `zh-CN`、`en-US`；响应错误文案可本地化，业务判断使用错误 `code`，不要匹配中文消息。 |
@@ -119,7 +144,7 @@
 | 方法 | 路径 | 权限 | 请求与结果 / 副作用 |
 | --- | --- | --- | --- |
 | GET | `/api/health` | 公开 | 返回 `{"status":"ok"}`，仅证明 HTTP 进程存活，不证明数据库可写或通知已送达。 |
-| POST | `/api/auth/login` | 公开 | `{email,password}`；返回 `authenticated,user,supportedLocales` 并签发 Cookie。 |
+| POST | `/api/auth/login` | 公开，账号/IP 限流 | `{email,password}`；触发额外验证后增加 `challengeId,challengeAnswer`，换图可提交 `refreshChallenge:true`。返回 `authenticated,user,supportedLocales` 并签发 Cookie；错误可含短期图片挑战或重试等待时间，不区分账号不存在与密码错误。 |
 | POST | `/api/auth/logout` | 公开 | 撤销当前 Cookie 对应会话，返回 `{loggedOut:true}`；数据库撤销失败返回 503 并保留 Cookie，便于重试，不报告成功。 |
 | GET | `/api/session` | 本人/项目读 | 返回 `tenant,project,user`、权限及代访问信息；首次改密账号得到受限会话视图。 |
 | GET | `/api/watermark` | 本人 | 不依赖项目选择，返回当前 `userId,accountName,serverTime,ipAddress,ipSource,refreshSeconds`；连接 IP 仅取服务端连接地址，响应不缓存。 |
@@ -141,7 +166,7 @@
 
 ### 页面水印
 
-`GET /api/watermark` 使用当前 Cookie 会话，不接受任意用户查询。`serverTime` 为 UTC RFC3339 时间，`ipSource` 固定为 `connection`，`refreshSeconds` 为 60。无法解析连接 IP 时 `ipAddress` 为空；经过反向代理时表示代理连接地址，不直接相信 `X-Forwarded-For` 或 `X-Real-IP`。支持 `X-DevFlow-Expected-User` 身份检查，非 GET 返回 405，数据库不可用返回脱敏 503。
+`GET /api/watermark` 使用当前 Cookie 会话，不接受任意用户查询。`serverTime` 为 UTC RFC3339 时间，`ipSource` 固定为 `connection`，`refreshSeconds` 为 60。无法解析连接 IP 时 `ipAddress` 为空；经过反向代理时表示代理连接地址，不直接相信 `X-Forwarded-For` 或 `X-Real-IP`。支持 `X-TaskLoom-Expected-User` 身份检查，非 GET 返回 405，数据库不可用返回脱敏 503。
 
 页面每秒更新时间、每分钟同步元数据。水印不参与业务授权，也不保证下载文件或原生客户端自动带水印。
 
@@ -171,7 +196,7 @@
 | GET | `/api/organization/applications` | `applications.review` | 返回加入申请列表；查询 `status` 可筛选审核状态。 |
 | POST | `/api/organization/applications/{id}/approve` | `applications.review` + 分配权限校验 | `{email,initialPassword?,employeeNo?,projectMemberships?}`；审核通过并创建账号。 |
 | POST | `/api/organization/applications/{id}/reject` | `applications.review` | `{reason}`；拒绝申请，不创建账号。 |
-| GET / PATCH | `/api/organization/ai-settings` | 企业 AI 管理权限 | GET 脱敏配置；PATCH `{apiKey?,model?,enabled?,clear?}`，加密保存密钥；`clear` 与 `apiKey` 不可同时使用。 |
+| GET / PATCH | `/api/organization/ai-settings` | 企业 AI 管理权限 | GET 脱敏配置（含 baseUrl、endpointMode、version）；PATCH `{apiKey?,model?,enabled?,clear?,baseUrl?,reuseKey?,expectedVersion?}`，加密保存密钥；`clear` 与 `apiKey` 不可同时使用。 |
 
 ### 成员创建和更新字段
 
@@ -192,7 +217,7 @@
 ```http
 POST /api/organization/members
 Content-Type: application/json
-X-DevFlow-Expected-User: CURRENT_USER_ID
+X-TaskLoom-Expected-User: CURRENT_USER_ID
 ```
 
 ```json
@@ -310,8 +335,8 @@ X-DevFlow-Expected-User: CURRENT_USER_ID
 
 ```http
 POST /api/requirements
-X-DevFlow-Project: PROJECT_ID
-X-DevFlow-Expected-User: CURRENT_USER_ID
+X-TaskLoom-Project: PROJECT_ID
+X-TaskLoom-Expected-User: CURRENT_USER_ID
 Content-Type: application/json
 ```
 
@@ -479,7 +504,7 @@ Content-Type: application/json
 ```http
 POST /api/test-cases
 Content-Type: application/json
-X-DevFlow-Project: PROJECT_ID
+X-TaskLoom-Project: PROJECT_ID
 ```
 
 ```json
@@ -537,6 +562,7 @@ X-DevFlow-Project: PROJECT_ID
 | 方法 | 路径 | 权限 | 请求与结果 / 副作用 |
 | --- | --- | --- | --- |
 | GET / POST | `/api/ai/requirement-title` | 项目读/AI 生成 | GET 能力与模型状态；POST `{description,confirmed:true,requirementId?}`，返回建议标题，用户决定是否应用。 |
+| GET / POST | `/api/ai/requirement-refine` | 项目读/AI 生成、明确外发确认 | GET 返回完善能力和模型状态；POST `{description,confirmed:true,requirementId?}` 返回仅供人工选择应用的 `preview`（background、rules、exceptions、acceptance、questions），不创建或修改需求，不开放给 Bearer/OpenAPI。 |
 | GET / POST | `/api/requirements/{id}/ai-test-cases` | 项目读/AI 生成 | GET `configured,enabled,model,canGenerate,inputFields,maxCases,focusOptions`；POST 下方生成请求。 |
 | POST | `/api/requirements/{id}/ai-test-cases/import` | 项目写、本人草稿 | 选择候选入库；不能导入别人的草稿，需求/配置版本变化须重新生成或按错误提示重新确认。 |
 | GET / POST | `/api/test-cases/{id}/ai-review` | 项目读/AI 生成 | POST `{confirmed:true,caseUpdatedAt,mode}`；`mode=standard/logic`，返回 `summary,issues,model` 等；不自动修改原用例、评审状态或权限。 |
@@ -589,8 +615,9 @@ AI 用例生成前必须保存需求。只有明确确认才会把需求标题�
 | --- | --- | --- | --- |
 | GET | `/api/notifications` | 本人/项目读 | 查询 `read,eventType,project,limit,offset`；返回 `items,unread,limit,offset`。 |
 | GET | `/api/notifications/unread-count` | 本人/项目读 | `{unread:number}`；站点轻量更新角标使用。不是 SSE 或 WebSocket。 |
-| POST | `/api/notifications/read-all` | 本人/项目读 | 将本人当前可见通知全部标为已读，返回 `{updated:number}`；不是仅把当前筛选页标为已读。 |
-| PATCH | `/api/notifications/{id}` | 本人/项目读 | `{read:true/false}`，只更改本人可见通知的已读状态。 |
+| POST | `/api/notifications/read-all` | 本人，禁止代访问写入 | 将本人当前可见通知全部标为已读，返回 `{updated:number,unread:number}`；不是仅把当前筛选页标为已读。 |
+| POST | `/api/notifications/bulk-read` | 本人，禁止代访问写入 | `{ids:[1,2],read:true/false}`，1–100 个不重复正整数 ID；逐通知校验当前项目权限，混入无权限通知时整批拒绝。事务返回 `{updated:number,unread:number}`。 |
+| PATCH | `/api/notifications/{id}` | 本人，禁止代访问写入 | `{read:true/false}`，只更改本人可见通知的已读状态，返回 `{updated:number,unread:number}`。 |
 | GET | `/api/notifications/outbox` | 项目管理权限校验 | 当前项目最近 100 条外发队列，返回 `mode,items`，不等于站内通知箱。 |
 | POST | `/api/notifications/outbox/{id}/retry` | 项目管理权限校验 | 仅失败记录可重试，返回 `id,status`；成功入队不代表企业微信已送达。 |
 
@@ -612,6 +639,11 @@ AI 用例生成前必须保存需求。只有明确确认才会把需求标题�
 | --- | --- | --- | --- |
 | GET | `/api/reports/workload` | `reports.view` | 查询 `month=YYYY-MM`；企业月度工作量，返回 totals、people、departments、roles、未分配/未估算及统计范围。 |
 | GET | `/api/reports/workload/trends` | `reports.view` | 查询 `month,months,department,user,role`；months 仅 6 或 12，返回 monthly/iterations/options 等趋势。 |
+| GET | `/api/reports/workload/personal` | 当前有效账号 | `month=YYYY-MM`，仅返回当前用户在可访问活跃项目中的个人工作量，以及是否拥有组员报表入口。不能通过 user 参数读取他人。 |
+| GET | `/api/reports/workload/team` | 具有显式研发组长角色且存在主部门 | `month=YYYY-MM`，仅返回主部门内、已加入组长负责项目的活跃成员工作量；无授权时拒绝。 |
+| GET | `/api/reports/workload/iterations` | 本人；企业范围需 `reports.view` | `scope=personal\|organization`（默认本人），`month=YYYY-MM`，`count=2\|4\|6\|8\|12`（默认 4），可选 `project`。从计划结束日期不晚于所选月末、当前状态为已完成的迭代中选择最近 N 次；提前完成的本月迭代仍纳入。返回 `iterations`、`people[].roles[].points`、已分配与已完成权重及未估算计数。个人范围只返回当前用户在获授权活跃项目中的数据；企业范围包括当前企业员工，无数据员工保留空 roles。当前状态/人员分摊快照，不是历史完成事件或绩效结论。 |
+| GET | `/api/reports/release-notes` | 当前项目成员 + `reports.view` | 查询 `q,page,pageSize` 或 `limit`；`q` 最多 100 字，按字面量检索已保存的版本、迭代、需求和日志条目；返回已保存的迭代升级日志快照摘要，项目范围严格由 `X-TaskLoom-Project` 与会话复核。 |
+| GET | `/api/reports/release-notes/{sprintId}` | 当前项目成员 + `reports.view` | 返回版本名称/时间、固定七类、需求正文与验收、真实截图路径和图注；只含完成需求，排除缺陷，不回传 AI 服务配置或密钥。 |
 | GET | `/api/audit-logs` | 项目管理 | 查询 `objectType,action,actorId,from,to,limit,cursor`；返回脱敏变更列表及下一页游标。 |
 | GET | `/api/exports/requirement/{id}.pdf` | 项目读 | 导出授权需求 PDF。 |
 | GET | `/api/exports/defect/{id}.pdf` | 项目读 | 导出授权缺陷 PDF。 |
@@ -620,11 +652,11 @@ AI 用例生成前必须保存需求。只有明确确认才会把需求标题�
 
 ### 单条需求完整导出
 
-`GET /api/requirements/{id}/export?format=json|markdown` 使用当前站点会话及 `X-DevFlow-Project`，不是开放平台 Bearer 接口。`format` 必填且只能出现一次，不接受其它查询参数或额外子路径。该只读请求不需要写入幂等键或 `If-Match`，不会创建工作项、写导出审计或调用外部模型。原有需求 PDF 接口保持不变；PDF、列表 CSV 与本接口的用途和内容范围不同。
+`GET /api/requirements/{id}/export?format=json|markdown` 使用当前站点会话及 `X-TaskLoom-Project`，不是开放平台 Bearer 接口。`format` 必填且只能出现一次，不接受其它查询参数或额外子路径。该只读请求不需要写入幂等键或 `If-Match`，不会创建工作项、写导出审计或调用外部模型。原有需求 PDF 接口保持不变；PDF、列表 CSV 与本接口的用途和内容范围不同。
 
 ```http
 GET /api/requirements/123/export?format=json HTTP/1.1
-X-DevFlow-Project: prj_example
+X-TaskLoom-Project: prj_example
 ```
 
 上述 ID 仅为示例；浏览器应通过同源会话发送请求，不要把 Cookie 写入导出文件或分享给模型。

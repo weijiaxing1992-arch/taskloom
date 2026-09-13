@@ -197,6 +197,10 @@ func parseAITestCaseReview(raw string, model string) (aiTestCaseReviewResult, er
 // reviewAITestCase 使用固定的官方 Responses 端点和严格 JSON Schema。规则、业务
 // 上下文和用例内容都作为不可信数据发送，模型不具备工具、网络或写回能力。
 func (a *App) reviewAITestCase(ctx context.Context, key, model string, input aiTestCaseReviewInput) (aiTestCaseReviewResult, error) {
+	return a.reviewAITestCaseAt(ctx, key, model, aiDefaultBaseURL, input)
+}
+
+func (a *App) reviewAITestCaseAt(ctx context.Context, key, model, baseURL string, input aiTestCaseReviewInput) (aiTestCaseReviewResult, error) {
 	payloadInput := map[string]any{
 		"mode":            input.Mode,
 		"rules":           input.Rules,
@@ -243,16 +247,16 @@ func (a *App) reviewAITestCase(ctx context.Context, key, model string, input aiT
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, aiEndpoint, bytes.NewReader(encoded))
+	endpoint, client, err := a.aiRequestClient(baseURL)
+	if err != nil {
+		return aiTestCaseReviewResult{}, err
+	}
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(encoded))
 	if err != nil {
 		return aiTestCaseReviewResult{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
-	client := http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	if a.aiHTTP != nil {
-		client.Transport = a.aiHTTP.Transport
-	}
 	response, err := client.Do(req)
 	if err != nil {
 		if requestCtx.Err() != nil {
@@ -297,6 +301,9 @@ func (a *App) reviewAITestCase(ctx context.Context, key, model string, input aiT
 	if chunks != 1 {
 		return aiTestCaseReviewResult{}, aiFailure(502, "ai_invalid_output", "AI 审查返回内容无效，请重新审查")
 	}
+	if aiOutputContainsKey(text, key) {
+		return aiTestCaseReviewResult{}, aiFailure(502, "ai_invalid_output", "AI 审查返回内容无效，请重新审查")
+	}
 	return parseAITestCaseReview(text, model)
 }
 
@@ -305,6 +312,7 @@ func aiReviewCapability(settings aiSettings, canReview bool) map[string]any {
 		"configured": len(settings.Encrypted) > 0,
 		"enabled":    settings.Enabled,
 		"model":      settings.Model,
+		"baseUrl":    settings.BaseURL,
 		"canReview":  canReview,
 		"modes":      []string{"standard", "logic"},
 	}
@@ -513,7 +521,7 @@ func (a *App) testCaseAIReview(w http.ResponseWriter, r *http.Request, id int64)
 			a.failReservedAITestCaseReview(input.ReservationID)
 		}
 	}()
-	result, err := a.reviewAITestCase(r.Context(), key, ai.Model, input)
+	result, err := a.reviewAITestCaseAt(r.Context(), key, ai.Model, ai.BaseURL, input)
 	if err != nil {
 		failAI(w, err)
 		return

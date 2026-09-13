@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { t, categoryLabel, formatDate as formatCreatedAt } from '../i18n'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
-import TapdImport from '../components/TapdImport.vue'
+const TapdImport = defineAsyncComponent(() => import('../components/TapdImport.vue'))
 import Icon from '../components/Icon.vue'
 import CustomFieldInputs from '../components/CustomFieldInputs.vue'
 import RequirementWeights from '../components/RequirementWeights.vue'
+import RequirementHistory from '../components/RequirementHistory.vue'
 import RequirementTags from '../components/RequirementTags.vue'
-import MentionComment from '../components/MentionComment.vue'
+const MentionComment = defineAsyncComponent(() => import('../components/MentionComment.vue'))
 import CommentReplyContext from '../components/CommentReplyContext.vue'
 import type { CommentReplyTarget } from '../commentReplies'
 import MemberMultiSelect from '../components/MemberMultiSelect.vue'
@@ -21,18 +22,19 @@ import RequirementResources from '../components/RequirementResources.vue'
 import RequirementDetailPreferences from '../components/RequirementDetailPreferences.vue'
 import ResizableDrawer from '../components/ResizableDrawer.vue'
 import ResizableSplit from '../components/ResizableSplit.vue'
-import Editor from './Editor.vue'
-import RichTextEditor from '../components/RichTextEditor.vue'
+const Editor = defineAsyncComponent(() => import('./Editor.vue'))
+const RichTextEditor = defineAsyncComponent(() => import('../components/RichTextEditor.vue'))
 import RequirementFavorite from '../components/RequirementFavorite.vue'
+import RequirementShare from '../components/RequirementShare.vue'
 import RequirementCode from '../components/RequirementCode.vue'
 import RequirementBulkActions from '../components/RequirementBulkActions.vue'
-import RequirementAITestCases from '../components/RequirementAITestCases.vue'
+const RequirementAITestCases = defineAsyncComponent(() => import('../components/RequirementAITestCases.vue'))
 import RequirementTestCaseCoverage from '../components/RequirementTestCaseCoverage.vue'
 import RequirementLinks from '../components/RequirementLinks.vue'
 import RequirementDependencies from '../components/RequirementDependencies.vue'
 import RequirementListExport from '../components/RequirementListExport.vue'
-import WorkItemPdfExport from '../components/WorkItemPdfExport.vue'
-import DefectComposer from '../components/DefectComposer.vue'
+const WorkItemPdfExport = defineAsyncComponent(() => import('../components/WorkItemPdfExport.vue'))
+const DefectComposer = defineAsyncComponent(() => import('../components/DefectComposer.vue'))
 import { useLayoutBoolean } from '../layoutScope'
 import SidebarCollapseButton from '../components/SidebarCollapseButton.vue'
 import StatusMultiSelect from '../components/StatusMultiSelect.vue'
@@ -56,6 +58,8 @@ function togglePage(checked:boolean){checkedIds.value=checked?[...new Set([...ch
 function bulkChanged(){checkedIds.value=[];void load()}
 watch(items,()=>{checkedIds.value=checkedIds.value.filter(id=>items.value.some(item=>item.id===id))})
 const detailPreferences=ref<{basicFields:string[]|null;customFieldKeys:string[]|null}>({basicFields:null,customFieldKeys:null})
+const detailPeopleFieldKeys=computed(()=>{const keys=detailPreferences.value.customFieldKeys??fieldDefs.value.map(field=>field.key);return keys.filter(key=>key!=='business_value'&&fieldDefs.value.some(field=>field.key===key&&['user','users','number'].includes(field.type)))})
+const detailOtherFieldKeys=computed(()=>(detailPreferences.value.customFieldKeys??fieldDefs.value.map(field=>field.key)).filter(key=>!detailPeopleFieldKeys.value.includes(key)))
 const detailFieldVisible=(key:string)=>detailPreferences.value.basicFields===null||detailPreferences.value.basicFields.includes(key)
 const categoryRecords=ref<any[]>([]), categorySearch=ref(''), categoryMenu=ref<number|null>(null), canManageCategories=ref(false), categoryOrdering=ref(false), categoryOrderVersion=ref('')
 const categoryModal=ref<'create'|'rename'|'delete'|null>(null), categoryTarget=ref<any>(null), categoryName=ref(''), categoryError=ref(''), categorySaving=ref(false)
@@ -65,9 +69,18 @@ const initialAssigneeId=typeof route.query.assigneeUserId==='string'?route.query
 const filters=reactive({mine:route.query.mine==='1'?'1':'',q:'',status:'',statusCategory:'',priority:'',assignee:initialAssigneeId?'':typeof route.query.assignee==='string'?route.query.assignee:'',assigneeUserId:initialAssigneeId,sprint:'',category:'',sort:'updatedAt',order:'desc'})
 const cfFilters=reactive<Record<string,string>>({})
 const advancedFilters=ref<WorkFilter[]>([])
+const delayedOnly=computed(()=>advancedFilters.value.some(rule=>rule.field==='iterationDelayCount'&&rule.operator==='gt'&&rule.value===0))
+function toggleDelayFilter(){advancedFilters.value=delayedOnly.value?advancedFilters.value.filter(rule=>!(rule.field==='iterationDelayCount'&&rule.operator==='gt'&&rule.value===0)):[...advancedFilters.value,{field:'iterationDelayCount',operator:'gt',value:0}]}
+// “被阻塞”必须交给后端在完整需求范围内计算，不能只过滤当前分页结果。
+const blockedOnly=computed(()=>advancedFilters.value.some(rule=>rule.field==='dependencyState'&&rule.operator==='eq'&&rule.value==='blocked'))
+function toggleBlockedFilter(){const remaining=advancedFilters.value.filter(rule=>rule.field!=='dependencyState');advancedFilters.value=blockedOnly.value?remaining:[...remaining,{field:'dependencyState',operator:'eq',value:'blocked'}]}
 let boundViewFilters:{signature:string;rules:SavedViewFilter[]}|null=null
 const filterFields=computed(()=>workItemFields(fieldDefs.value,members.value).map(field=>field.key==='status'?{...field,options:statusFilterOptions.value.map(item=>({...item,label:statusOptionLabel(item,t)}))}:field))
 const page=ref(1), size=ref(15), listTotal=ref(0), selected=ref<any>(null), detailTab=ref('详细信息'), detailLoading=ref(!!props.detailOnly&&!!route.query.req), saving=ref(false)
+// 首次进入测试区才请求 AI 能力；之后保留面板，切换阅读标签不丢生成选项或草稿。
+const aiPanelVisited = ref(false)
+watch(() => selected.value?.id, () => { aiPanelVisited.value = false }, { flush: 'sync' })
+watch(detailTab, value => { if (value === '测试用例') aiPanelVisited.value = true }, { flush: 'sync' })
 const pageSizeOptions=[{value:15,label:'15 条/页'},{value:30,label:'30 条/页'},{value:50,label:'50 条/页'}]
 let lastListQuery=''
 const comments=ref<any[]>([]), activities=ref<any[]>([]), checks=ref<any[]>([]), related=ref<any>({children:[],defects:[],cases:[]})
@@ -91,6 +104,9 @@ const leavePrompt=ref(false), leaveSaving=ref(false), leaveError=ref('')
 const resourceDraft=ref({url:'',title:'',opened:false})
 const resourceDirty=computed(()=>!!(resourceDraft.value.url.trim()||resourceDraft.value.title.trim()))
 const drawerWidth=ref(1320), childDrawerWidth=ref(1160), showProperties=useLayoutBoolean('requirements.detail.properties',true)
+const supplementaryExpanded=ref(false)
+const supplementaryDirty=computed(()=>!!selected.value&&detailOtherFieldKeys.value.some(key=>JSON.stringify(detailDraft.customFields[key])!==JSON.stringify(selected.value.customFields?.[key])))
+watch(()=>selected.value?.id,()=>{supplementaryExpanded.value=false},{flush:'sync'})
 // 侧边栏属于个人阅读偏好，只保存在当前浏览器，不同步到项目或其他成员。
 const requirementsSidebarExpanded=useLayoutBoolean('requirements.sidebar',true)
 const collapsedRequirementParents=ref<number[]>([])
@@ -120,10 +136,12 @@ const roles=[
  {key:'algorithm',label:'算法难度',person:'算法工程师'}, {key:'ui',label:'UI 难度',person:'UI 工程师'}, {key:'product',label:'产品难度',person:'产品'},
 ]
 const baseColumns:Column[]=[
- {key:'code',label:'需求编号',group:'基础信息',fixed:true,width:112},
+ // 编号列固定为六位纯数字及复制动作预留空间；不能再由标题列挤压或遮住。
+ {key:'code',label:'需求编号',group:'基础信息',fixed:true,width:118},
  {key:'title',label:'标题',group:'基础信息',fixed:true,width:320},
  {key:'type',label:'需求类型',group:'基础信息'}, {key:'category',label:'分类',group:'基础信息',width:180},
  {key:'sprint',label:'迭代',group:'基础信息',default:true,width:165},
+ {key:'iterationDelayCount',label:'迭代延误次数',group:'基础信息',width:145},
  {key:'status',label:'状态',group:'基础信息',default:true}, {key:'priority',label:'优先级',group:'基础信息',default:true,width:86},
  {key:'owner',label:'产品负责人',group:'基础信息'}, {key:'assignee',label:'处理人',group:'基础信息',default:true},
  ...roles.flatMap(r=>[
@@ -145,7 +163,14 @@ const defaults=computed(()=>catalog.value.filter(c=>c.fixed||c.default).map(c=>c
 const columnFields=computed(()=>catalog.value.map(column=>({...column,kind:filterFields.value.find(field=>field.key===column.key)?.kind||'text',custom:column.key.startsWith('cf.')})))
 const visibleColumns=computed(()=>columns.value.map(key=>catalog.value.find(c=>c.key===key)).filter(Boolean) as Column[])
 function columnLabel(column:Column|undefined){return !column?'':column.key.startsWith('cf.')?column.label:t(column.label)}
-const tableWidth=computed(()=>visibleColumns.value.reduce((n,c)=>n+(c.width||115),canEdit.value?44:0))
+const requirementCodeColumnWidth=118
+function columnWidth(column:Column){return column.key==='code'?requirementCodeColumnWidth:column.width||115}
+const tableWidth=computed(()=>visibleColumns.value.reduce((n,column)=>n+columnWidth(column),canEdit.value?44:0))
+const tableStyle=computed(()=>({
+ width:tableWidth.value+'px',
+ '--requirement-code-width':requirementCodeColumnWidth+'px',
+ '--requirement-bulk-width':canEdit.value?'44px':'0px',
+}))
 const sortedItems=computed(()=>items.value)
 // 后端筛选完成后再组成树，父项被筛掉时子项仍会作为顶层结果保留，避免搜索结果丢失。
 const treeItems=computed(()=>{
@@ -169,7 +194,7 @@ async function exportRecords(signal:AbortSignal,progress:(done:number,total:numb
  const query=lastListQuery,project=String(session.value?.project?.id||'')
  if(!project||loading.value||!listTotal.value)throw Error('请稍后重试')
  const params=new URLSearchParams(query),rules:SavedViewFilter[]=JSON.parse(params.get('filters')||'[]').map(captureFilterReference)
- const request=(path:string,signal:AbortSignal)=>api<any>(path,{signal,headers:{'X-DevFlow-Project':project}})
+ const request=(path:string,signal:AbortSignal)=>api<any>(path,{signal,headers:{'X-TaskLoom-Project':project}})
  // 保存视图的 neq 引用在导出前也重查，防止目录改名后扩大结果。
  if(rules.some(rule=>['category','sprint'].includes(rule.field)&&['eq','neq'].includes(rule.operator))){
   const [s,c]=await Promise.all([request('/sprints',signal),request('/requirement-categories',signal)])
@@ -195,9 +220,9 @@ function resolveLegacyAssignee(){
 const categories=computed(()=>[...new Set([...categoryRecords.value.map(x=>x.name),selected.value?.category].filter(Boolean))])
 const visibleCategories=computed(()=>categoryRecords.value.filter(x=>x.name.toLowerCase().includes(categorySearch.value.trim().toLowerCase())))
 const totalRequirements=computed(()=>categoryRecords.value.reduce((total,x)=>total+Number(x.count||0),0))
-const activeView=computed(()=>filters.category?'category':filters.mine==='1'?'mine':filters.status==='评审中'?'review':filters.statusCategory==='done'||statusSelection.value.length&&statusSelection.value.every(key=>stateInfo(key,statusDefinitions.value).category==='done')?'completed':'all')
+const activeView=computed(()=>filters.category?'category':blockedOnly.value?'blocked':filters.mine==='1'?'mine':filters.status==='评审中'?'review':filters.statusCategory==='done'||statusSelection.value.length&&statusSelection.value.every(key=>stateInfo(key,statusDefinitions.value).category==='done')?'completed':'all')
 const detailTabs=computed(()=>[{name:'详细信息',label:'需求描述',icon:'review'},{name:'子需求',label:'子需求',icon:'folder',count:related.value.children.length},{name:'测试用例',label:'测试用例',icon:'work',count:testCaseTotal.value??related.value.cases.length},{name:'缺陷',label:'缺陷',icon:'shield',count:related.value.defects.length},{name:'关联需求',label:'关联需求',icon:'link'},{name:'需求依赖',label:'需求依赖',icon:'link'},{name:'变更记录',label:'变更记录',icon:'list',count:activities.value.length}])
-const tagTabs=computed(()=>[{name:'标签',icon:'tag',count:splitTags(detailDraft.tags).length},{name:'角色权重',icon:'weights',label:'权重',count:roles.filter(role=>detailDraft.roleWeights[role.key]?.value!==null&&detailDraft.roleWeights[role.key]?.value!==undefined).length}])
+const tagTabs=computed(()=>[{name:'标签',icon:'tag',count:splitTags(detailDraft.tags).length},{name:'角色权重',icon:'weights',label:'人员与开发评估',count:roles.filter(role=>detailDraft.roleWeights[role.key]?.value!==null&&detailDraft.roleWeights[role.key]?.value!==undefined).length}])
 function selectDetailTab(name:string){if(name!==detailTab.value&&testCaseCoverage.value?.canLeave?.()===false)return;detailTab.value=name}
 const assessmentDirty=computed(()=>selected.value&&(!detailCustomDatesValid.value||JSON.stringify(detailDraft)!==JSON.stringify(assessment(selected.value))))
 const descriptionDirty=computed(()=>selected.value&&(descriptionDraft.body!==(selected.value.description||'')||JSON.stringify(descriptionDraft.document)!==JSON.stringify(selected.value.descriptionDoc??null)||JSON.stringify(descriptionDraft.mentionUserIds)!==JSON.stringify(normalizeMentionIds(selected.value.descriptionMentionUserIds))))
@@ -212,12 +237,23 @@ const selectedSprintOptions=computed(()=>{
 let listVersion=0, detailVersion=0, relatedLoadVersion=0, detailDisposed=false, timer:ReturnType<typeof setTimeout>, toastTimer:ReturnType<typeof setTimeout>
 function assessment(x:any){return{roleWeights:normalizeRoleWeights(x.roleWeights||{}),tags:x.tags||'',tagColors:{...(x.tagColors||{})},remarks:x.remarks||'',remarksMentionUserIds:normalizeMentionIds(x.remarksMentionUserIds),remarksMentionNames:{...(x.remarksMentionNames||{})},customFields:JSON.parse(JSON.stringify(x.customFields||{}))}}
 const detailCustomDatesValid=ref(true)
+watch(detailCustomDatesValid,valid=>{if(!valid){supplementaryExpanded.value=true;showProperties.value=true}},{flush:'sync'})
 function resetAssessment(){detailCustomDatesValid.value=true;if(selected.value)Object.assign(detailDraft,assessment(selected.value))}
 function resetDescription(){if(selected.value)Object.assign(descriptionDraft,{body:selected.value.description||'',document:JSON.parse(JSON.stringify(selected.value.descriptionDoc??null)),mentionUserIds:normalizeMentionIds(selected.value.descriptionMentionUserIds),mentionNames:{...(selected.value.descriptionMentionNames||{})}})}
 function resetAssignments(){assignmentDraft.value=normalizeMentionIds(selected.value?.assigneeUserIds);assignmentTouched.value=false}
 function resetOwners(){ownerDraft.value=normalizeMentionIds(selected.value?.ownerUserIds??(selected.value?.ownerUserId?[selected.value.ownerUserId]:[]));ownersTouched.value=false}
 async function saveOwners(){if(await patchFields({ownerUserIds:normalizeMentionIds(ownerDraft.value)}))resetOwners()}
-async function loadTags(){try{const data=await api<any>('/requirement-tags');tagOptions.value=data.items||[];tagError.value=''}catch(cause:any){tagError.value=cause.message||'项目标签暂时无法载入，可重试或创建新标签'}}
+// 只合并同账号/项目的在途读取，不缓存已完成结果。回到页面仍获取最新目录。
+const directoryReads=new Map<string,Promise<any>>()
+function directoryScope(){return JSON.stringify([session.value?.tenant?.id||'',session.value?.user?.id||'',session.value?.project?.id||''])}
+function readDirectory(path:string){
+ const scope=directoryScope(),key=scope+'|'+path,existing=directoryReads.get(key)
+ if(existing)return existing
+ const project=session.value?.project?.id
+ const request=api<any>(path,project?{headers:{'X-TaskLoom-Project':String(project)}}:undefined).finally(()=>{if(directoryReads.get(key)===request)directoryReads.delete(key)})
+ directoryReads.set(key,request);return request
+}
+async function loadTags(){const scope=directoryScope();try{const data=await readDirectory('/requirement-tags');if(detailDisposed||scope!==directoryScope())return;tagOptions.value=data.items||[];tagError.value=''}catch(cause:any){if(!detailDisposed&&scope===directoryScope())tagError.value=cause.message||'项目标签暂时无法载入，可重试或创建新标签'}}
 function createChild(){if(canEdit.value&&selected.value&&!saving.value&&!mediaBusy.value&&!childParent.value)childParent.value={id:selected.value.id,title:selected.value.title}}
 function createDefect(){if(canEdit.value&&selected.value&&!saving.value&&!mediaBusy.value&&!defectContext.value)defectContext.value={id:selected.value.id,title:selected.value.title,sprint:selected.value.sprint}}
 async function defectCancelled(){defectContext.value=null;await nextTick();defectCreateButton.value?.focus({preventScroll:true})}
@@ -271,6 +307,42 @@ async function saveAssessment(){
  await patchFields({...fields,remarksMentionUserIds:ids},true)
 }
 async function saveAssignments(){if(await patchFields({assigneeUserIds:normalizeMentionIds(assignmentDraft.value)}))resetAssignments()}
+// 人员与难度一次保存；还原当前区域不能丢掉尚未提交的备注和标签。
+const allPersonnelKeys=computed(()=>fieldDefs.value.filter(field=>field.key!=='business_value'&&['user','users','number'].includes(field.type)).map(field=>field.key))
+function personnelCustomFields(values:Record<string,any>){return Object.fromEntries(allPersonnelKeys.value.filter(key=>Object.hasOwn(values||{},key)).map(key=>[key,values[key]]))}
+const personnelDirty=computed(()=>selected.value&&(assignmentDirty.value||ownerDirty.value||JSON.stringify(detailDraft.roleWeights)!==JSON.stringify(normalizeRoleWeights(selected.value.roleWeights))||JSON.stringify(personnelCustomFields(detailDraft.customFields))!==JSON.stringify(personnelCustomFields(selected.value.customFields||{}))))
+function resetPersonnel(){if(!selected.value)return;detailDraft.roleWeights=normalizeRoleWeights(selected.value.roleWeights);const fields=selected.value.customFields||{};for(const key of allPersonnelKeys.value){if(Object.hasOwn(fields,key))detailDraft.customFields[key]=JSON.parse(JSON.stringify(fields[key]));else delete detailDraft.customFields[key]}resetAssignments();resetOwners()}
+async function savePersonnel(){
+ if(!canEdit.value||!selected.value||saving.value||mediaBusy.value||!personnelDirty.value)return
+ // 只提交实际改动，避免未编辑的隐藏字段覆盖其他成员刚保存的数据。
+ const before=assessment(selected.value),snapshot=JSON.parse(JSON.stringify(detailDraft)),assignmentSnapshot=JSON.stringify(assignmentDraft.value),ownerSnapshot=JSON.stringify(ownerDraft.value)
+ const fields:any={},changedCustomFields:Record<string,any>={}
+ if(JSON.stringify(snapshot.roleWeights)!==JSON.stringify(before.roleWeights))fields.roleWeights=normalizeRoleWeights(snapshot.roleWeights)
+ for(const key of allPersonnelKeys.value)if(JSON.stringify(snapshot.customFields[key])!==JSON.stringify(before.customFields[key]))changedCustomFields[key]=snapshot.customFields[key]??null
+ if(Object.keys(changedCustomFields).length)fields.customFields=changedCustomFields
+ if(assignmentDirty.value)fields.assigneeUserIds=normalizeMentionIds(assignmentDraft.value)
+ if(ownerDirty.value)fields.ownerUserIds=normalizeMentionIds(ownerDraft.value)
+ const saved=await patchFields(fields)
+ if(!saved)return
+ // 同步服务端新基线，但保留请求期间的新草稿；备注、标签和其他区域不受影响。
+ if(JSON.stringify(detailDraft.roleWeights)===JSON.stringify(snapshot.roleWeights))detailDraft.roleWeights=normalizeRoleWeights(saved.roleWeights)
+ for(const key of allPersonnelKeys.value)if(JSON.stringify(detailDraft.customFields[key])===JSON.stringify(snapshot.customFields[key])){if(Object.hasOwn(saved.customFields||{},key))detailDraft.customFields[key]=JSON.parse(JSON.stringify(saved.customFields[key]));else delete detailDraft.customFields[key]}
+ if(JSON.stringify(assignmentDraft.value)===assignmentSnapshot)resetAssignments()
+ if(JSON.stringify(ownerDraft.value)===ownerSnapshot)resetOwners()
+}
+/**
+ * 需求在界面上使用纯数字序列号，避免“REQ-”前缀占用表格首列。
+ * 正常编号固定补零到 6 位；历史数据若意外超过 6 位则完整保留，绝不截断为
+ * 一个可能与其他需求重复的编号。
+ */
+function requirementSerial(x:any):string{
+ const id=Number(x?.id)
+ if(Number.isSafeInteger(id)&&id>0)return id<=999999?String(id).padStart(6,'0'):String(id)
+ const legacy=String(x?.code||'').match(/(\d+)$/)?.[1]
+ if(!legacy)return '—'
+ const numeric=String(Number(legacy))
+ return Number(legacy)<=999999?numeric.padStart(6,'0'):numeric
+}
 function displayValue(x:any,key:string):string{
  if(key.startsWith('role.')){
   const [,role,field]=key.split('.'),value=x.roleWeights?.[role]?.[field]
@@ -286,7 +358,8 @@ function displayValue(x:any,key:string):string{
  if(key==='category')return categoryLabel(value||'未分类')
  if(key==='assignee')return x.assignees?.length?x.assignees.map((member:any)=>member.name).join('、'):x.assignee||'—'
  if(key==='owner')return workItemPersonNames(x,key,members.value).join('、')||'—'
- if(key==='parentId')return value?'REQ-'+String(value).padStart(4,'0'):'—'
+ if(key==='code')return requirementSerial(x)
+ if(key==='parentId')return value?requirementSerial({id:value}):'—'
  if(key.startsWith('cf.')&&['user','users'].includes(fieldDefs.value.find(d=>d.key===key.slice(3))?.type))return (Array.isArray(value)?value:[value]).filter(Boolean).map(id=>members.value.find(m=>m.id===id)?.name||id).join('、')||'—'
  if(typeof value==='boolean')return t(value?'是':'否')
  if(Array.isArray(value))return value.join('、')||'—'
@@ -321,18 +394,25 @@ function setCategoryDirectory(data:any){
  categoryOrderVersion.value=typeof data?.orderVersion==='string'?data.orderVersion:''
 }
 async function loadOptions(){
+ const scope=directoryScope()
  try{
-  const [s,m,f,c,states]=await Promise.all([api<any>('/sprints'),api<any>('/members'),api<any>('/field-definitions?objectType=requirement'),api<any>('/requirement-categories'),api<any>('/requirement-statuses'),loadTags()])
+  const [s,m,f,c,states]=await Promise.all([readDirectory('/sprints'),readDirectory('/members'),readDirectory('/field-definitions?objectType=requirement'),readDirectory('/requirement-categories'),readDirectory('/requirement-statuses'),loadTags()])
+  if(detailDisposed||scope!==directoryScope())return
   statusDefinitions.value=states.items||[]
   sprints.value=s.items||[];members.value=m.items||[];resolveLegacyAssignee();fieldDefs.value=(f.items||[]).filter((d:any)=>d.enabled);setCategoryDirectory(c);metadataError.value=''
- }catch(e:any){metadataError.value=e.message||'请稍后重试'}
+ }catch(e:any){if(!detailDisposed&&scope===directoryScope())metadataError.value=e.message||'请稍后重试'}
+}
+async function refreshSprintOptions(){
+ const scope=directoryScope()
+ try{const data=await readDirectory('/sprints');if(!detailDisposed&&scope===directoryScope())sprints.value=data.items||[]}
+ catch{if(!detailDisposed&&scope===directoryScope())show('迭代选项刷新失败，已保留当前选择；请稍后重试')}
 }
 async function loadCategories(){const data=await api<any>('/requirement-categories');setCategoryDirectory(data)}
 function setView(view:string){
  let status=''
  if(view==='review'||view==='release'){const aliases=view==='review'?['评审中','待评审']:['待上线'];const definition=statusDefinitions.value.find(item=>item.enabled&&aliases.includes(item.key))||statusDefinitions.value.find(item=>item.enabled&&aliases.includes(item.name));if(!definition){show('当前项目没有此模板对应的可用状态，请使用状态筛选');return};status=definition.key}
  if(view==='mine'&&!session.value?.user?.id){show('账号信息尚未载入，请稍后重试');return}
- clearFilters();if(view==='mine')filters.mine='1';if(status)filters.status=status;if(view==='completed')filters.statusCategory='done'
+ clearFilters();if(view==='mine')filters.mine='1';if(view==='blocked')toggleBlockedFilter();if(status)filters.status=status;if(view==='completed')filters.statusCategory='done'
 }
 function captureView():RequirementViewConfig{
  const myId=session.value?.user?.id,mode=filters.assigneeUserId?(filters.assigneeUserId===myId?'me':'member'):'any'
@@ -429,7 +509,7 @@ async function saveColumns(keys?:string[]){
  columnsSaving.value=true;columnsError.value=''
  try{
   const next=normalizeColumns(keys||columnDraft.value.filter(c=>c.enabled).map(c=>c.key))
-  await api('/preferences/requirement-list',{method:'PATCH',headers:project?{'X-DevFlow-Project':String(project)}:undefined,body:JSON.stringify({columns:next})})
+  await api('/preferences/requirement-list',{method:'PATCH',headers:project?{'X-TaskLoom-Project':String(project)}:undefined,body:JSON.stringify({columns:next})})
   if(detailDisposed||request!==columnReadVersion||session.value?.project?.id!==project||session.value?.user?.id!==user)return
   columns.value=next;columnsOpen.value=false;if(panel===columnPanel.value)panel?.close();show('列配置已保存，仅影响你在当前项目的视图')
  }catch(e:any){if(!detailDisposed&&request===columnReadVersion)columnsError.value=e.message}finally{if(!detailDisposed)columnsSaving.value=false}
@@ -454,7 +534,7 @@ async function loadParent(requirement:any){
  const project=String(session.value?.project?.id||'')
  const current=()=>!detailDisposed&&version===parentLoadVersion&&detail===detailVersion&&String(session.value?.project?.id||'')===project&&selected.value?.id===childId&&Number(selected.value?.parentId)===id
  parentLoading.value=true
- try{const parent=await api<any>('/requirements/'+id,project?{headers:{'X-DevFlow-Project':project}}:undefined);if(!current())return;if(parent?.id!==id||typeof parent.title!=='string'||parent.projectId&&project&&String(parent.projectId)!==project)throw Error('Invalid parent response');parentSummary.value=parent}
+ try{const parent=await api<any>('/requirements/'+id,project?{headers:{'X-TaskLoom-Project':project}}:undefined);if(!current())return;if(parent?.id!==id||typeof parent.title!=='string'||parent.projectId&&project&&String(parent.projectId)!==project)throw Error('Invalid parent response');parentSummary.value=parent}
  catch{if(current())parentError.value='父需求暂时无法加载，可能已删除或没有访问权限。'}
  finally{if(current())parentLoading.value=false}
 }
@@ -468,7 +548,7 @@ async function open(id:number,push=true){
  try{
   const x=await api<any>('/requirements/'+id);if(version!==detailVersion)return
   selected.value=x;detailTab.value='详细信息';resetAssessment();resetDescription();resetAssignments();resetOwners();descriptionEditing.value=false;void loadParent(x)
-  const [,all,d,c]=await Promise.all([loadRelated(id),api<any>('/requirements'),api<any>('/defects'),api<any>('/test-cases')])
+  const [,all,d,c]=await Promise.all([loadRelated(id),api<any>('/requirements?projection=reference'),api<any>('/defects'),api<any>('/test-cases')])
   if(version===detailVersion)related.value={children:(all.items||[]).filter((v:any)=>v.parentId===id),defects:(d.items||[]).filter((v:any)=>v.requirementId===id),cases:(c.items||[]).filter((v:any)=>v.requirementId===id)}
  }catch(e:any){if(version===detailVersion){detailError.value=e.message;if(!selected.value)error.value=e.message}}
  finally{if(version===detailVersion){detailLoading.value=false;await consumeChildEntry()}}
@@ -480,8 +560,8 @@ function close(){
  const query={...route.query};delete query.req;delete query.createChild;router.replace({query})
 }
 async function patchFields(fields:any,resetDraft=false){
- if(!selected.value||saving.value||mediaBusy.value)return
- if(Object.hasOwn(fields,'customFields')&&!detailCustomDatesValid.value){detailError.value='请先修正日期输入';return}
+ if(!selected.value||!canEdit.value||detailDisposed||saving.value||mediaBusy.value)return
+ if(!detailCustomDatesValid.value&&fieldDefs.value.some(field=>field.type==='date'&&Object.hasOwn(fields.customFields||{},field.key))){detailError.value='请先修正日期输入';return}
  saving.value=true;detailError.value='';const id=selected.value.id,version=detailVersion
  let persisted:any=null
  try{
@@ -501,7 +581,7 @@ async function addComment(payload:{body:string;mentionUserIds:string[];contentDo
  const id=selected.value.id,version=detailVersion,draft=commentSnapshot(),project=String(session.value?.project?.id||''),user=session.value?.user?.id,replyToId=commentReply.value?.id
  const current=()=>!detailDisposed&&version===detailVersion&&selected.value?.id===id&&String(session.value?.project?.id||'')===project&&session.value?.user?.id===user
  saving.value=true;detailError.value='';++relatedLoadVersion
- try{const saved=await api<any>('/requirements/'+id+'/comments',{method:'POST',body:JSON.stringify({...payload,...(replyToId?{replyToId}:{})}),...(project?{headers:{'X-DevFlow-Project':project}}:{})});if(!current())return;if(!saved||!Number.isSafeInteger(saved.id)||saved.id<1||replyToId&&saved.replyToId!==replyToId)throw Error('评论返回数据不完整，请刷新讨论后确认，勿重复提交。');comments.value=[saved,...comments.value.filter(entry=>entry.id!==saved.id)];if(draft===commentSnapshot())resetCommentDraft();resourceVersion.value++;show('评论已发布');window.dispatchEvent?.(new Event('devflow-notifications-changed'));try{await loadRelated(id)}catch{if(current())detailError.value='评论已发布，但讨论刷新失败，请重试刷新。'}}catch(e:any){if(current())detailError.value=e.message}finally{if(!detailDisposed&&version===detailVersion)saving.value=false}
+ try{const saved=await api<any>('/requirements/'+id+'/comments',{method:'POST',body:JSON.stringify({...payload,...(replyToId?{replyToId}:{})}),...(project?{headers:{'X-TaskLoom-Project':project}}:{})});if(!current())return;if(!saved||!Number.isSafeInteger(saved.id)||saved.id<1||replyToId&&saved.replyToId!==replyToId)throw Error('评论返回数据不完整，请刷新讨论后确认，勿重复提交。');comments.value=[saved,...comments.value.filter(entry=>entry.id!==saved.id)];if(draft===commentSnapshot())resetCommentDraft();resourceVersion.value++;show('评论已发布');window.dispatchEvent?.(new Event('devflow-notifications-changed'));try{await loadRelated(id)}catch{if(current())detailError.value='评论已发布，但讨论刷新失败，请重试刷新。'}}catch(e:any){if(current())detailError.value=e.message}finally{if(!detailDisposed&&version===detailVersion)saving.value=false}
 }
 async function addCheck(){
  if(!checkText.value.trim()||!selected.value)return
@@ -571,27 +651,30 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
    <header class="pool-brand"><span><Icon name="list" :size="20"/></span><div><b>{{ t('需求池') }}</b><small>{{ t('从想法到交付') }}</small></div></header>
    <nav class="pool-views" :aria-label="t('需求视图')">
     <button :class="{active:activeView==='all'}" @click="setView('all')"><Icon name="list"/><span>{{ t('全部需求') }}</span><em>{{totalRequirements}}</em></button>
+    <button :class="{active:activeView==='blocked'}" @click="setView('blocked')"><Icon name="link"/><span>{{ t('被阻塞') }}</span></button>
     <button :class="{active:activeView==='mine'}" @click="setView('mine')"><Icon name="user"/><span>{{ t('与我相关') }}</span></button>
     <button :class="{active:activeView==='review'}" @click="setView('review')"><Icon name="review"/><span>{{ t('待评审') }}</span></button>
     <button :class="{active:activeView==='completed'}" @click="setView('completed')"><Icon name="work"/><span>{{ t('已完成') }}</span></button>
    </nav>
    <div class="category-section-title"><span>{{ t('需求分类') }}</span><button v-if="canManageCategories" :title="t('创建分类')" :aria-label="t('创建需求分类')" :disabled="categoryOrdering||categorySaving" @click="editCategory('create')"><Icon name="plus"/></button></div>
    <div class="category-search"><Icon name="search" :size="13"/><input v-model="categorySearch" :aria-label="t('搜索需求分类')" :placeholder="t('查找分类')"></div>
-   <div class="category-folders"><div v-for="c in visibleCategories" :key="c.id" class="category-folder" :class="{active:filters.category===c.name}"><div class="category-folder-row"><button class="category-select" :title="categoryLabel(c.name)" @click="filters.category=c.name"><Icon name="folder"/><span>{{categoryLabel(c.name)}}</span><em>{{c.count}}</em></button><button v-if="canManageCategories&&c.name!=='未分类'" class="category-menu-trigger" :aria-label="t('管理分类 {name}',{name:c.name})" :aria-expanded="categoryMenu===c.id" :disabled="categoryOrdering||categorySaving" @click="categoryMenu=categoryMenu===c.id?null:c.id"><Icon name="more"/></button></div><div v-if="categoryMenu===c.id" class="category-actions" :aria-busy="categoryOrdering"><div class="category-reorder-actions" role="group" :aria-label="t('调整分类顺序')"><button type="button" class="category-move" :title="t('上移 {name}',{name:c.name})" :aria-label="t('上移 {name}',{name:c.name})" :disabled="!categoryCanMove(c,-1)" @click="moveCategory(c,-1)">↑</button><button type="button" class="category-move" :title="t('下移 {name}',{name:c.name})" :aria-label="t('下移 {name}',{name:c.name})" :disabled="!categoryCanMove(c,1)" @click="moveCategory(c,1)">↓</button></div><button :disabled="categoryOrdering||categorySaving" @click="editCategory('rename',c)"><Icon name="edit" :size="13"/>{{ t('重命名') }}</button><button :disabled="categoryOrdering||categorySaving" @click="editCategory('delete',c)"><Icon name="trash" :size="13"/>{{ t('删除分类') }}</button></div></div><p v-if="!visibleCategories.length" class="no-categories">{{ t('没有匹配的分类') }}</p></div>
+   <div class="category-folders"><div v-for="c in visibleCategories" :key="c.id" class="category-folder" :class="{active:filters.category===c.name}"><div class="category-folder-row"><button class="category-select" :title="categoryLabel(c.name)" @click="filters.category=c.name"><Icon name="folder"/><span>{{categoryLabel(c.name)}}</span><em>{{c.count}}</em></button><button v-if="canManageCategories&&c.name!=='未分类'" class="category-menu-trigger" :aria-label="t('管理分类 {name}',{name:c.name})" :aria-controls="'category-actions-'+c.id" :aria-expanded="categoryMenu===c.id" :disabled="categoryOrdering||categorySaving" @click="categoryMenu=categoryMenu===c.id?null:c.id"><Icon name="more"/></button></div><div v-if="categoryMenu===c.id" :id="'category-actions-'+c.id" class="category-actions" role="group" :aria-label="t('管理分类 {name}',{name:c.name})" :aria-busy="categoryOrdering" @keydown.esc.stop="categoryMenu=null"><div class="category-reorder-actions" role="group" :aria-label="t('调整分类顺序')"><button type="button" class="category-move" :title="t('上移 {name}',{name:c.name})" :aria-label="t('上移 {name}',{name:c.name})" :disabled="!categoryCanMove(c,-1)" @click="moveCategory(c,-1)"><span aria-hidden="true">↑</span><span>{{ t('上移') }}</span></button><button type="button" class="category-move" :title="t('下移 {name}',{name:c.name})" :aria-label="t('下移 {name}',{name:c.name})" :disabled="!categoryCanMove(c,1)" @click="moveCategory(c,1)"><span aria-hidden="true">↓</span><span>{{ t('下移') }}</span></button></div><button type="button" class="category-action" :disabled="categoryOrdering||categorySaving" @click="editCategory('rename',c)"><Icon name="edit" :size="13"/><span>{{ t('重命名') }}</span></button><button type="button" class="category-action danger" :disabled="categoryOrdering||categorySaving" @click="editCategory('delete',c)"><Icon name="trash" :size="13"/><span>{{ t('删除分类') }}</span></button></div></div><p v-if="!visibleCategories.length" class="no-categories">{{ t('没有匹配的分类') }}</p></div>
    <button v-if="canManageCategories" class="new-category-link" :disabled="categoryOrdering||categorySaving" @click="editCategory('create')"><Icon name="plus" :size="14"/>{{ t('新建分类') }}</button>
    <div class="pool-sidebar-footer"><Icon name="shield" :size="14"/><span>{{ t('分类与数据按当前项目隔离') }}</span></div>
    </div>
   </aside>
   <section class="list-pane">
-<div class="list-heading pool-heading compact-page-heading"><div><h1>{{categoryLabel(filters.category)||({mine:t('与我相关的需求'),review:t('待评审需求'),completed:t('已完成需求')} as Record<string,string>)[activeView]||t('全部需求')}}<small>{{listTotal}}</small></h1><details class="page-heading-note"><summary :aria-label="t('页面说明')" :title="t('页面说明')"><span aria-hidden="true">?</span></summary><p>{{ t('统一管理需求、协同评估难度，让交付安排清晰可见。') }}</p></details></div><div class="compact-heading-actions"><TapdImport v-if="canManageCategories" @imported="load"/><router-link v-if="canEdit" class="btn primary" to="/requirements/new"><Icon name="plus"/>{{ t('创建需求') }}</router-link></div></div>
+<div class="list-heading pool-heading compact-page-heading"><div><h1>{{categoryLabel(filters.category)||({blocked:t('被阻塞需求'),mine:t('与我相关的需求'),review:t('待评审需求'),completed:t('已完成需求')} as Record<string,string>)[activeView]||t('全部需求')}}<small>{{listTotal}}</small></h1><details class="page-heading-note"><summary :aria-label="t('页面说明')" :title="t('页面说明')"><span aria-hidden="true">?</span></summary><p>{{ t('统一管理需求、协同评估难度，让交付安排清晰可见。') }}</p></details></div><div class="compact-heading-actions"><TapdImport v-if="canManageCategories" @imported="load"/><router-link v-if="canEdit" class="btn primary" to="/requirements/new"><Icon name="plus"/>{{ t('创建需求') }}</router-link></div></div>
    <div v-if="metadataError" class="inline-notice" role="alert">{{t('项目分类、迭代或字段选项加载失败：{error}',{error:t(metadataError)})}} <button class="link" @click="loadOptions">{{ t('重试') }}</button></div>
    <div class="toolbar req-toolbar">
     <div class="search"><Icon name="search"/><input v-model="filters.q" :aria-label="t('搜索需求')" :placeholder="t('搜索标题、编号、负责人或部门')"></div>
     <StatusMultiSelect v-model="statusSelection" :options="statusFilterOptions" :label="t('筛选需求状态（多选）')" />
+    <button type="button" class="btn compact" :class="{active:delayedOnly}" :aria-pressed="delayedOnly" @click="toggleDelayFilter">{{t('仅迭代延误')}}</button>
+    <button type="button" class="btn compact" :class="{active:blockedOnly}" :aria-pressed="blockedOnly" :title="t('仅显示存在未完成前置依赖，且当前账号有权查看该依赖的需求。')" @click="toggleBlockedFilter">{{t('仅被阻塞')}}</button>
     <select v-if="showExtraFilters||filters.priority" v-model="filters.priority" :aria-label="t('筛选优先级')"><option value="">{{ t('全部优先级') }}</option><option v-for="p in ['P0','P1','P2','P3']" :key="p" :value="p">{{p}}</option></select>
     <MemberMultiSelect v-model="assigneeFilterIds" :members="members" :snapshots="assigneeFilterSnapshots" :current-user-id="session?.user?.id" :label="t('筛选处理人')" :hint="t('全部处理人')" :show-lead="false" single compact/>
     <button type="button" class="btn compact" :aria-expanded="showExtraFilters" @click="showExtraFilters=!showExtraFilters">{{t(showExtraFilters?'收起更多操作':'更多筛选与操作')}}</button>
-    <select v-if="showExtraFilters||filters.sprint" v-model="filters.sprint" :aria-label="t('筛选迭代')" @focus="loadOptions"><option value="">{{ t('全部迭代') }}</option><option value="待规划">{{ t('待规划') }}</option><option v-for="s in sprints" :key="s.id" :value="s.name">{{s.name}}</option></select>
+    <select v-if="showExtraFilters||filters.sprint" v-model="filters.sprint" :aria-label="t('筛选迭代')" @focus="refreshSprintOptions"><option value="">{{ t('全部迭代') }}</option><option value="待规划">{{ t('待规划') }}</option><option v-for="s in sprints" :key="s.id" :value="s.name">{{s.name}}</option></select>
     <button type="button" class="btn compact" :class="{active:filters.mine==='1'}" :aria-pressed="filters.mine==='1'" :title="t('包含人员字段、工程师角色、创建、评论参与及 @ 提及')" @click="filters.mine=filters.mine==='1'?'':'1'">{{t('与我相关')}}</button><WorkItemFilters v-show="showExtraFilters||advancedFilters.length" v-model="advancedFilters" :fields="filterFields" :disabled="!!metadataError"/>
     <div v-show="showExtraFilters"><RequirementListExport v-if="session?.project?.id" :items="loading||error?[]:sortedItems" :total="loading||error?0:listTotal" :records-provider="exportRecords" :columns="visibleColumns.map(column=>column.key)" :project-id="session.project.id"/></div>
     <div v-show="showExtraFilters||checkedItems.length"><RequirementBulkActions v-if="canEdit" :items="checkedItems" :members="members" :sprints="sprints" :categories="categories" :statuses="statusDefinitions" :disabled="loading||!!metadataError" @busy="bulkBusy=$event" @changed="bulkChanged"/></div>
@@ -603,15 +686,16 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
    <div v-if="error" class="inline-notice" role="alert">{{t(error)}} <button class="link" @click="load">{{ t('重试') }}</button></div>
    <div v-if="loading" class="state"><span class="spinner"></span>{{ t('正在载入需求…') }}</div>
    <div v-else-if="!items.length" class="state"><b>{{ t('没有符合条件的需求') }}</b><p>{{ t('清除筛选或创建一条需求。') }}</p><button class="btn" @click="clearFilters">{{ t('清除筛选') }}</button></div>
-   <div v-else-if="listView==='board'" class="requirement-status-board" :aria-label="t('需求状态看板')"><section v-for="column in statusBoard" :key="column.value"><h3 :style="{borderColor:column.color}">{{statusOptionLabel(column,t)}} <small>{{column.items.length}}</small></h3><article v-for="item in column.items" :key="item.id" role="link" tabindex="0" :class="['requirement-board-card',{expanded:boardCardExpanded(item.id)}]" @click="open(item.id)" @keydown.enter.self="open(item.id)" @keydown.space.self.prevent="open(item.id)"><div class="requirement-board-summary"><RequirementCode class="code" :requirement="item" :members="members" @open="open(item.id)"/><strong :title="item.title">{{item.title}}</strong><button type="button" class="requirement-board-disclosure" :aria-controls="'requirement-board-details-'+item.id" :aria-expanded="boardCardExpanded(item.id)" :aria-label="boardCardExpanded(item.id)?t('收起需求 {title} 的更多信息',{title:item.title}):t('展开需求 {title} 的更多信息',{title:item.title})" @click.stop="toggleBoardCard(item.id)"><span>{{boardCardExpanded(item.id)?t('收起更多信息'):t('展开更多信息')}}</span><span class="requirement-board-disclosure-icon" aria-hidden="true">⌄</span></button></div><div :id="'requirement-board-details-'+item.id" v-show="boardCardExpanded(item.id)" class="requirement-board-details"><span class="req-tags"><span v-for="tag in splitTags(item.tags)" :key="tag" class="colored-tag" :style="tagStyle(item.tagColors?.[tag])">{{tag}}</span><span v-if="!splitTags(item.tags).length">{{t('暂无标签')}}</span></span><span class="requirement-board-meta"><span>{{displayValue(item,'assignee')}}</span><span>{{t('总权重')}} {{item.weightTotal??0}}</span></span></div></article></section></div>
+   <div v-else-if="listView==='board'" class="requirement-status-board" :aria-label="t('需求状态看板')"><section v-for="column in statusBoard" :key="column.value"><h3 :style="{borderColor:column.color}">{{statusOptionLabel(column,t)}} <small>{{column.items.length}}</small></h3><article v-for="item in column.items" :key="item.id" role="link" tabindex="0" :class="['requirement-board-card',{expanded:boardCardExpanded(item.id)}]" @click="open(item.id)" @keydown.enter.self="open(item.id)" @keydown.space.self.prevent="open(item.id)"><div class="requirement-board-summary"><RequirementCode class="code" :requirement="item" :display-code="requirementSerial(item)" :members="members" @open="open(item.id)"/><strong :title="item.title">{{item.title}}</strong><button type="button" class="requirement-board-disclosure" :aria-controls="'requirement-board-details-'+item.id" :aria-expanded="boardCardExpanded(item.id)" :aria-label="boardCardExpanded(item.id)?t('收起需求 {title} 的更多信息',{title:item.title}):t('展开需求 {title} 的更多信息',{title:item.title})" @click.stop="toggleBoardCard(item.id)"><span>{{boardCardExpanded(item.id)?t('收起更多信息'):t('展开更多信息')}}</span><span class="requirement-board-disclosure-icon" aria-hidden="true">⌄</span></button><span v-if="item.iterationDelayCount>0" class="iteration-delay-badge requirement-board-delay">{{t('迭代延误 ×{count}',{count:item.iterationDelayCount})}}</span></div><div :id="'requirement-board-details-'+item.id" v-show="boardCardExpanded(item.id)" class="requirement-board-details"><span class="req-tags"><span v-for="tag in splitTags(item.tags)" :key="tag" class="colored-tag" :style="tagStyle(item.tagColors?.[tag])">{{tag}}</span><span v-if="!splitTags(item.tags).length">{{t('暂无标签')}}</span></span><span class="requirement-board-meta"><span>{{displayValue(item,'assignee')}}</span><span>{{t('总权重')}} {{item.weightTotal??0}}</span></span></div></article></section></div>
    <div v-else class="table-wrap">
-    <table class="req-table configurable-table" :style="{width:tableWidth+'px'}">
-     <colgroup><col v-if="canEdit" style="width:44px"><col v-for="c in visibleColumns" :key="c.key" :style="{width:(c.width||115)+'px'}"></colgroup>
-     <thead><tr><th v-if="canEdit" class="bulk-selection"><input type="checkbox" :checked="allPageChecked" :disabled="bulkBusy" :aria-label="t('选择当前页需求')" @change="togglePage(($event.target as HTMLInputElement).checked)"></th><th v-for="c in visibleColumns" :key="c.key" :class="{'sticky-code':c.key==='code','sticky-title':c.key==='title'}" :aria-sort="filters.sort===c.key?(filters.order==='asc'?'ascending':'descending'):'none'"><button class="column-sort" :aria-label="t('按 {name} 排序',{name:columnLabel(c)})" @click="sortByColumn(c.key)">{{columnLabel(c)}} <span>{{filters.sort===c.key?(filters.order==='asc'?'↑':'↓'):'↕'}}</span></button></th></tr></thead>
-     <tbody><tr v-for="x in treeItems" :key="x.id" :class="{selected:selected?.id===x.id,'requirement-child-row':x._treeDepth>0}" @click="open(x.id)"><td v-if="canEdit" class="bulk-selection" @click.stop><input v-model="checkedIds" type="checkbox" :value="x.id" :disabled="bulkBusy" :aria-label="t('选择需求 {code}',{code:x.code})"></td>
+    <table class="req-table configurable-table" :class="{'has-bulk-selection':canEdit}" :style="tableStyle">
+     <colgroup><col v-if="canEdit" style="width:44px"><col v-for="c in visibleColumns" :key="c.key" :style="{width:columnWidth(c)+'px'}"></colgroup>
+     <thead><tr><th v-if="canEdit" class="bulk-selection sticky-selection"><input type="checkbox" :checked="allPageChecked" :disabled="bulkBusy" :aria-label="t('选择当前页需求')" @change="togglePage(($event.target as HTMLInputElement).checked)"></th><th v-for="c in visibleColumns" :key="c.key" :class="{'sticky-code':c.key==='code','sticky-title':c.key==='title'}" :aria-sort="filters.sort===c.key?(filters.order==='asc'?'ascending':'descending'):'none'"><button class="column-sort" :aria-label="t('按 {name} 排序',{name:columnLabel(c)})" @click="sortByColumn(c.key)">{{columnLabel(c)}} <span>{{filters.sort===c.key?(filters.order==='asc'?'↑':'↓'):'↕'}}</span></button></th></tr></thead>
+     <tbody><tr v-for="x in treeItems" :key="x.id" :class="{selected:selected?.id===x.id,'requirement-child-row':x._treeDepth>0}" @click="open(x.id)"><td v-if="canEdit" class="bulk-selection sticky-selection" @click.stop><input v-model="checkedIds" type="checkbox" :value="x.id" :disabled="bulkBusy" :aria-label="t('选择需求 {code}',{code:requirementSerial(x)})"></td>
       <td v-for="c in visibleColumns" :key="c.key" :class="{'sticky-code code':c.key==='code','sticky-title':c.key==='title','numeric-cell':c.key.endsWith('.value')||c.key==='weightTotal'}" :title="c.key==='tags'?x.tags:displayValue(x,c.key)">
-       <RequirementCode v-if="c.key==='code'" :requirement="x" :members="members" @open="open(x.id)"/>
-       <div v-else-if="c.key==='title'" class="req-title-link" :style="{paddingLeft:(x._treeDepth*18)+'px'}"><button v-if="x._treeHasChildren" type="button" class="requirement-tree-toggle" :aria-label="x._treeExpanded?t('收起子需求'):t('展开子需求')" :aria-expanded="x._treeExpanded" @click.stop="toggleRequirementChildren(x.id)">{{x._treeExpanded?'⌄':'›'}}</button><span v-else-if="x._treeDepth" class="requirement-tree-branch" aria-hidden="true">└</span><button type="button" class="req-title-open" @click.stop="open(x.id)"><span class="type-icon">{{ t('需') }}</span><b>{{x.title}}</b></button></div>
+       <RequirementCode v-if="c.key==='code'" :requirement="x" :display-code="requirementSerial(x)" :members="members" @open="open(x.id)"/>
+       <div v-else-if="c.key==='title'" class="req-title-link" :style="{paddingLeft:(x._treeDepth*18)+'px'}"><button v-if="x._treeHasChildren" type="button" class="requirement-tree-toggle" :aria-label="x._treeExpanded?t('收起子需求'):t('展开子需求')" :aria-expanded="x._treeExpanded" @click.stop="toggleRequirementChildren(x.id)">{{x._treeExpanded?'⌄':'›'}}</button><span v-else-if="x._treeDepth" class="requirement-tree-branch" aria-hidden="true">└</span><button type="button" class="req-title-open" @click.stop="open(x.id)"><span class="type-icon">{{ t('需') }}</span><b>{{x.title}}</b></button><span v-if="blockedOnly&&x.dependencyStatus?.blockedByCount" class="dependency-blocked-badge">{{t('被阻塞 · {count} 项前置未完成',{count:x.dependencyStatus.blockedByCount})}}</span><span v-if="x.iterationDelayCount>0" class="iteration-delay-badge">{{t('迭代延误 ×{count}',{count:x.iterationDelayCount})}}</span></div>
+       <span v-else-if="c.key==='iterationDelayCount'" :class="{'iteration-delay-badge':x.iterationDelayCount>0}">{{x.iterationDelayCount>0?t('迭代延误 ×{count}',{count:x.iterationDelayCount}):0}}</span>
        <span v-else-if="c.key==='status'" :class="['status','workflow-color',x.status]" :style="workflowStyle(x,statusDefinitions)">{{statusLabel(x,statusDefinitions,t)}}</span>
        <span v-else-if="c.key==='priority'" :class="['priority',x.priority]">{{x.priority}}</span>
        <div v-else-if="c.key==='tags'" class="req-tags"><span v-for="tag in splitTags(x.tags)" :key="tag" class="colored-tag" :style="tagStyle(x.tagColors?.[tag])">{{tag}}</span><span v-if="!splitTags(x.tags).length">—</span></div>
@@ -628,7 +712,7 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
   <div v-if="props.detailOnly&&route.query.req&&!selected" class="drawer-shade" @click.self="close"><ResizableDrawer storage-key="requirements.detail-loading.width" :initial-width="1320" :label="t('需求详情')" class="requirement-drawer"><header class="drawer-head"><div class="drawer-title"><h2>{{t('需求详情')}}</h2><button :aria-label="t('关闭需求详情')" @click="close">×</button></div></header><div class="state"><template v-if="detailLoading">{{t('正在载入需求…')}}</template><template v-else><p role="alert">{{t(detailError||error||'需求暂时无法载入，请重试')}}</p><button class="btn" @click="open(Number(route.query.req),false)">{{t('重新加载')}}</button></template></div></ResizableDrawer></div>
   <div v-if="selected" class="drawer-shade" @click.self="close">
    <ResizableDrawer v-model:width="drawerWidth" storage-key="requirements.detail.width" :initial-width="1320" :label="selected.title" :inert="!!childParent||!!fullEditorID||!!defectContext" class="requirement-drawer">
-    <header class="drawer-head"><div class="drawer-kicker"><span class="type-icon">{{ t('需') }}</span><RequirementCode :requirement="selected" :members="members" :open-on-click="false"/><span :class="['status','workflow-color',selected.status]" :style="workflowStyle(selected,statusDefinitions)">{{statusLabel(selected,statusDefinitions,t)}}</span><span class="drawer-width-hint">{{t('拖动左侧边缘调整宽度')}}</span></div><div class="drawer-title"><h2>{{selected.title}}</h2><div><RequirementFavorite :requirement-id="selected.id"/><WorkItemPdfExport v-if="session?.project?.id" object-type="requirement" :object-id="selected.id" :project-id="session.project.id"/><button :aria-pressed="showProperties" :aria-label="showProperties?t('收起基础信息'):t('展开基础信息')" @click="showProperties=!showProperties"><Icon name="fields"/>{{t('基础信息')}}</button><button :title="t('复制链接')" :aria-label="t('复制需求链接')" @click="copy"><Icon name="link"/></button><button v-if="canEdit&&props.detailOnly" @click="editFull">{{t('完整编辑')}}</button><router-link v-else-if="canEdit" :to="'/requirements/'+selected.id+'/edit'">{{ t('完整编辑') }}</router-link><button :aria-label="t('关闭需求详情')" @click="close">×</button></div></div><p class="detail-time">{{ t('创建于') }} {{formatCreatedAt(selected.createdAt)}} {{ t('· 更新于') }} {{formatCreatedAt(selected.updatedAt)}}</p></header>
+    <header class="drawer-head"><div class="drawer-kicker"><span class="type-icon">{{ t('需') }}</span><RequirementCode :requirement="selected" :display-code="requirementSerial(selected)" :members="members" :open-on-click="false"/><span :class="['status','workflow-color',selected.status]" :style="workflowStyle(selected,statusDefinitions)">{{statusLabel(selected,statusDefinitions,t)}}</span><span class="drawer-width-hint">{{t('拖动左侧边缘调整宽度')}}</span></div><div class="drawer-title"><h2>{{selected.title}}</h2><div><RequirementFavorite :requirement-id="selected.id"/><WorkItemPdfExport v-if="session?.project?.id" object-type="requirement" :object-id="selected.id" :project-id="session.project.id"/><button :aria-pressed="showProperties" :aria-label="showProperties?t('收起基础信息'):t('展开基础信息')" @click="showProperties=!showProperties"><Icon name="fields"/>{{t('基础信息')}}</button><RequirementShare :key="selected.id" :requirement-id="selected.id"/><button v-if="canEdit&&props.detailOnly" @click="editFull">{{t('完整编辑')}}</button><router-link v-else-if="canEdit" :to="'/requirements/'+selected.id+'/edit'">{{ t('完整编辑') }}</router-link><button :aria-label="t('关闭需求详情')" @click="close">×</button></div></div><p class="detail-time">{{ t('创建于') }} {{formatCreatedAt(selected.createdAt)}} {{ t('· 更新于') }} {{formatCreatedAt(selected.updatedAt)}}</p></header>
     <div v-if="selected.parentId" class="requirement-parent-context"><span>{{t('父需求')}}</span><span v-if="parentLoading" role="status">{{t('正在载入父需求…')}}</span><button v-else-if="parentSummary" type="button" :disabled="saving||mediaBusy" :aria-label="t('查看父需求')+' · '+parentSummary.title" @click="openParent"><b>{{parentSummary.code||'#'+parentSummary.id}}</b><span>{{parentSummary.title}}</span><Icon name="link" :size="14"/></button><div v-else role="status">{{t(parentError||'父需求暂时无法加载，可能已删除或没有访问权限。')}} <button type="button" class="link" :disabled="saving" @click="loadParent(selected)">{{t('重试')}}</button></div></div>
     <div v-if="detailError" class="inline-notice detail-alert" role="alert">{{t(detailError)}}</div>
     <div v-if="detailLoading" class="state">{{ t('正在载入关联信息…') }}</div>
@@ -637,8 +721,8 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
       <template #main><div class="detail-reading">
      <nav class="detail-navigation" :aria-label="t('需求详情导航')">
       <span class="detail-nav-caption">{{t('内容与协作')}}</span>
-      <button v-for="tab in detailTabs" :key="tab.name" :aria-pressed="detailTab===tab.name" :class="{active:detailTab===tab.name}" @click="selectDetailTab(tab.name)"><Icon :name="tab.icon"/><span>{{t(tab.label)}}</span><small v-if="tab.count!==undefined">{{tab.count}}</small></button>
-      <div class="detail-tag-section"><span class="detail-nav-caption">{{t('Tag 区间')}}</span><button v-for="tab in tagTabs" :key="tab.name" :aria-pressed="detailTab===tab.name" :class="{active:detailTab===tab.name}" @click="selectDetailTab(tab.name)"><Icon :name="tab.icon"/><span>{{t(tab.label||tab.name)}}</span><small>{{tab.count}}</small></button></div>
+      <button v-for="tab in detailTabs" :key="tab.name" :aria-pressed="detailTab===tab.name" :class="{active:detailTab===tab.name}" :title="t(tab.label)" @click="selectDetailTab(tab.name)"><Icon :name="tab.icon"/><span>{{t(tab.label)}}</span><small v-if="tab.count!==undefined">{{tab.count}}</small></button>
+      <div class="detail-tag-section"><span class="detail-nav-caption">{{t('Tag 区间')}}</span><button v-for="tab in tagTabs" :key="tab.name" :aria-pressed="detailTab===tab.name" :class="{active:detailTab===tab.name}" :title="t(tab.label||tab.name)" @click="selectDetailTab(tab.name)"><Icon :name="tab.icon"/><span>{{t(tab.label||tab.name)}}</span><small>{{tab.count}}</small></button></div>
       <div class="detail-nav-summary"><span>{{t('已保存总权重')}}</span><strong>{{selected.weightTotal??0}}</strong><small v-if="assessmentDirty">{{t('有未保存的修改')}}</small></div>
      </nav>
      <section class="detail-main">
@@ -664,9 +748,14 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
        </div>
       </div>
       <div v-if="detailTab==='角色权重'" class="detail-block detail-tag-pane">
-       <div class="detail-pane-heading"><span class="eyebrow">{{t('Tag 区间')}}</span><h3>{{t('角色权重')}}</h3><p>{{t('按职能绑定人员并手动填写数值，自动汇总整条需求的难度。')}}</p></div>
-       <RequirementWeights v-model="detailDraft.roleWeights" :members="members" :current-user-id="session?.user?.id" :disabled="!canEdit||saving"/>
-       <div v-if="canEdit" class="assessment-actions"><span>{{assessmentDirty?t('有未保存的修改'):t('已与需求同步')}}</span><button class="btn" :disabled="!assessmentDirty||saving||mediaBusy" @click="resetAssessment">{{t('还原')}}</button><button class="btn primary" :disabled="!assessmentDirty||saving||mediaBusy" @click="saveAssessment">{{saving?t('保存中…'):t('保存评估与补充信息')}}</button></div>
+       <div class="detail-pane-heading"><h3>{{t('人员与开发评估')}}</h3><p>{{t('集中设置处理人、测试人员、职能工程师与开发难度。')}}</p></div>
+       <div class="detail-personnel-fields">
+       <div v-if="detailFieldVisible('owner')" class="detail-owners detail-assignees"><label for="detail-owners">{{ t('产品负责人') }}</label><MemberMultiSelect input-id="detail-owners" v-model="ownerDraft" @update:modelValue="ownersTouched=true" :members="members" :member-roles="['product']" :snapshots="selected.owners" :legacy-name="!ownersTouched&&!selected.ownerUserIds?.length?selected.owner:''" :current-user-id="session?.user?.id" :disabled="!canEdit||saving||mediaBusy" :label="t('产品负责人')"/></div>
+       <div v-if="detailFieldVisible('assignee')" class="detail-assignees"><label for="detail-assignees">{{ t('处理人') }}</label><MemberMultiSelect input-id="detail-assignees" v-model="assignmentDraft" @update:modelValue="assignmentTouched=true" :members="members" :snapshots="selected.assignees" :legacy-name="!assignmentTouched&&!selected.assigneeUserIds?.length?selected.assignee:''" :disabled="!canEdit||saving||mediaBusy" :label="t('处理人')"/></div>
+       <CustomFieldInputs :disabled="!canEdit||saving||mediaBusy" object-type="requirement" v-model="detailDraft.customFields" :visible-keys="detailPeopleFieldKeys" inline/>
+       </div>
+       <RequirementWeights v-model="detailDraft.roleWeights" :members="members" :current-user-id="session?.user?.id" :disabled="!canEdit||saving||mediaBusy"/>
+       <div v-if="canEdit" class="assessment-actions"><span>{{personnelDirty?t('有未保存的修改'):t('已与需求同步')}}</span><button class="btn" :disabled="!personnelDirty||saving||mediaBusy" @click="resetPersonnel">{{t('还原')}}</button><button class="btn primary" :disabled="!personnelDirty||saving||mediaBusy" @click="savePersonnel">{{saving?t('保存中…'):t('保存人员与评估')}}</button></div>
       </div>
       <div v-else-if="detailTab==='标签'" class="detail-block detail-tag-pane">
        <div class="detail-pane-heading"><span class="eyebrow">{{t('Tag 区间')}}</span><h3>{{t('标签')}}</h3><p>{{t('选择已有标签或创建彩色标签，切换区间会保留未保存的修改。')}}</p></div>
@@ -675,27 +764,29 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
       </div>
       <RequirementLinks v-else-if="detailTab==='关联需求'" ref="requirementLinks" :requirement-id="selected.id" :can-edit="canEdit" @open="open"/>
       <RequirementDependencies v-else-if="detailTab==='需求依赖'" ref="requirementDependencies" :requirement-id="selected.id" :can-edit="canEdit" @open="open"/>
-      <div v-else-if="detailTab==='变更记录'" class="detail-block"><h3>{{ t('变更记录') }}</h3><div v-if="!activities.length" class="empty-mini">{{ t('暂无变更记录') }}</div><article v-for="a in activities" :key="a.id" class="activity"><span></span><div><b>{{a.actor}}</b> {{a.detail}}<time>{{formatCreatedAt(a.createdAt)}}</time></div></article></div>
+      <RequirementHistory v-else-if="detailTab==='变更记录'" :items="activities" :count="selected.iterationDelayCount||0" :members="members" :definitions="fieldDefs" :statuses="statusDefinitions"/>
       <div v-else-if="detailTab!=='详细信息'" :class="['relation-list',{ 'test-case-relation-list':detailTab==='测试用例' }]"><h3 v-if="detailTab!=='测试用例'">{{t(detailTab)}}</h3>
-       <template v-if="detailTab==='子需求'"><div class="child-actions"><p>{{t('子需求继承父需求分类及可用迭代，可在创建时调整。')}}</p><button v-if="canEdit" ref="childCreateButton" class="btn primary compact" :disabled="saving" @click="createChild">{{t('创建子需求')}}</button></div><section class="child-requirement-tree" :aria-label="t('子需求层级')"><article class="child-requirement-parent"><span class="type-icon">{{t('需')}}</span><RequirementCode :requirement="selected" :members="members" @open="open(selected.id)"/><b>{{selected.title}}</b><small>{{t('{count} 条子需求',{count:related.children.length})}}</small></article><article v-for="x in related.children" :key="x.id" class="child-requirement-node"><span class="child-requirement-branch" aria-hidden="true">└</span><RequirementCode :requirement="x" :members="members" @open="open(x.id)"/><button class="link" @click="open(x.id)">{{x.title}}</button><span class="status workflow-color" :style="workflowStyle(x,statusDefinitions)">{{statusLabel(x,statusDefinitions,t)}}</span></article></section><p v-if="!related.children.length" class="empty-mini">{{ t('暂无子需求') }}</p></template>
+       <template v-if="detailTab==='子需求'"><div class="child-actions"><p>{{t('子需求继承父需求分类及可用迭代，可在创建时调整。')}}</p><button v-if="canEdit" ref="childCreateButton" class="btn primary compact" :disabled="saving" @click="createChild">{{t('创建子需求')}}</button></div><section class="child-requirement-tree" :aria-label="t('子需求层级')"><article class="child-requirement-parent"><span class="type-icon">{{t('需')}}</span><RequirementCode :requirement="selected" :display-code="requirementSerial(selected)" :members="members" @open="open(selected.id)"/><b>{{selected.title}}</b><small>{{t('{count} 条子需求',{count:related.children.length})}}</small></article><article v-for="x in related.children" :key="x.id" class="child-requirement-node"><span class="child-requirement-branch" aria-hidden="true">└</span><RequirementCode :requirement="x" :display-code="requirementSerial(x)" :members="members" @open="open(x.id)"/><button class="link" @click="open(x.id)">{{x.title}}</button><span class="status workflow-color" :style="workflowStyle(x,statusDefinitions)">{{statusLabel(x,statusDefinitions,t)}}</span></article></section><p v-if="!related.children.length" class="empty-mini">{{ t('暂无子需求') }}</p></template>
        <template v-if="detailTab==='缺陷'"><div class="child-actions"><p>{{t('从需求发起缺陷，自动进入统一缺陷池并保留需求关联。')}}</p><button v-if="canEdit" ref="defectCreateButton" class="btn primary compact" :disabled="saving||mediaBusy" @click="createDefect">{{t('创建关联缺陷')}}</button></div><article v-for="x in related.defects" :key="x.id"><router-link :to="'/defects?bug='+x.id">{{x.code}} · {{x.title}}</router-link><span class="status">{{t(x.status)}}</span></article><p v-if="!related.defects.length" class="empty-mini">{{ t('暂无关联缺陷') }}</p></template>
        <RequirementTestCaseCoverage v-if="detailTab==='测试用例'" ref="testCaseCoverage" :requirement-id="selected.id" :disabled="!canEdit||saving" @loaded="testCaseTotal=$event.total" />
       </div>
-      <RequirementAITestCases v-show="detailTab==='测试用例'" :key="selected.id" ref="aiTests" :requirement-id="selected.id" :requirement-updated-at="selected.updatedAt" :disabled="!canEdit||saving" :has-unsaved-changes="!!(commentHasContent||resourceDirty||assessmentDirty||descriptionDirty||assignmentDirty||ownerDirty)" @busy="aiBusy=$event" @dirty="aiDirty=$event" @imported="refreshTestCases"/>
+      <RequirementAITestCases v-if="aiPanelVisited" v-show="detailTab==='测试用例'" :key="selected.id" ref="aiTests" :requirement-id="selected.id" :requirement-updated-at="selected.updatedAt" :disabled="!canEdit||saving" :has-unsaved-changes="!!(commentHasContent||resourceDirty||assessmentDirty||descriptionDirty||assignmentDirty||ownerDirty)" @busy="aiBusy=$event" @dirty="aiDirty=$event" @imported="refreshTestCases"/>
      </section>
       </div></template>
       <template #aside><aside class="detail-props" :aria-label="t('基础信息')">
-      <h3>{{ t('基础信息') }}</h3><RequirementDetailPreferences v-model="detailPreferences" :definitions="fieldDefs" :can-configure="canConfigure"/><fieldset :key="detailInputsVersion" :disabled="!canEdit||saving||mediaBusy">
+      <h3>{{ t('基础信息') }}</h3><p class="detail-delay-count"><span :class="{'iteration-delay-badge':selected.iterationDelayCount>0}">{{t('迭代延误 ×{count}',{count:selected.iterationDelayCount||0})}}</span></p><RequirementDetailPreferences v-model="detailPreferences" :definitions="fieldDefs" :can-configure="canConfigure"/><fieldset :key="detailInputsVersion" :disabled="!canEdit||saving||mediaBusy">
        <div v-if="detailFieldVisible('status')" class="requirement-state-control"><span>{{t('状态')}}</span><RequirementTransition :requirement-id="selected.id" :refresh-key="detailInputsVersion" :status="selected.status" :definitions="statusDefinitions" :disabled="saving||mediaBusy||!canEdit" @change="patchFields({status:$event})" /></div>
        <label v-if="detailFieldVisible('category')">{{ t('分类') }}<select :value="selected.category" @change="patchFields({category:($event.target as HTMLSelectElement).value})"><option v-for="c in categories" :key="c" :value="c">{{categoryLabel(c)}}</option></select></label>
-       <label v-if="detailFieldVisible('sprint')">{{ t('迭代') }}<select :value="selected.sprint" :aria-label="t('需求所属迭代')" @focus="loadOptions" @change="patchFields({sprint:($event.target as HTMLSelectElement).value})"><option v-for="s in selectedSprintOptions" :key="s.name" :value="s.name" :disabled="['已完成','已取消','历史关联'].includes(s.status)&&s.name!==selected.sprint">{{s.name==='待规划'?t('待规划'):s.name}}{{s.status?' · '+t(s.status==='进行中'?'当前进行中':s.status):''}}</option></select></label>
+       <label v-if="detailFieldVisible('sprint')">{{ t('迭代') }}<select :value="selected.sprint" :aria-label="t('需求所属迭代')" @focus="refreshSprintOptions" @change="patchFields({sprint:($event.target as HTMLSelectElement).value})"><option v-for="s in selectedSprintOptions" :key="s.name" :value="s.name" :disabled="['已完成','已取消','历史关联'].includes(s.status)&&s.name!==selected.sprint">{{s.name==='待规划'?t('待规划'):s.name}}{{s.status?' · '+t(s.status==='进行中'?'当前进行中':s.status):''}}</option></select></label>
        <label v-if="detailFieldVisible('priority')">{{ t('优先级') }}<select :value="selected.priority" @change="patchFields({priority:($event.target as HTMLSelectElement).value})"><option v-for="p in ['P0','P1','P2','P3']" :key="p" :value="p">{{p}}</option></select></label>
-       <div v-if="detailFieldVisible('owner')" class="detail-owners detail-assignees"><label for="detail-owners">{{ t('产品负责人') }}</label><MemberMultiSelect input-id="detail-owners" v-model="ownerDraft" @update:modelValue="ownersTouched=true" :members="members" :member-roles="['product']" :snapshots="selected.owners" :legacy-name="!ownersTouched&&!selected.ownerUserIds?.length?selected.owner:''" :current-user-id="session?.user?.id" :disabled="!canEdit||saving" :label="t('产品负责人')"/><div v-if="canEdit&&ownerDirty" class="assignment-actions"><button class="btn compact" :disabled="saving" @click="resetOwners">{{t('还原')}}</button><button class="btn primary compact" :disabled="saving" @click="saveOwners">{{t('保存产品负责人')}}</button></div></div>
-       <div v-if="detailFieldVisible('assignee')" class="detail-assignees"><label for="detail-assignees">{{ t('处理人') }}</label><MemberMultiSelect input-id="detail-assignees" v-model="assignmentDraft" @update:modelValue="assignmentTouched=true" :members="members" :snapshots="selected.assignees" :legacy-name="!assignmentTouched&&!selected.assigneeUserIds?.length?selected.assignee:''" :disabled="!canEdit||saving" :label="t('处理人')"/><div v-if="canEdit&&assignmentDirty" class="assignment-actions"><button class="btn compact" :disabled="saving" @click="resetAssignments">{{ t('还原') }}</button><button class="btn primary compact" :disabled="saving" @click="saveAssignments">{{ t('保存处理人') }}</button></div></div>
-       <h3 class="custom-title">{{ t('自定义字段') }}</h3><CustomFieldInputs object-type="requirement" v-model="detailDraft.customFields" :visible-keys="detailPreferences.customFieldKeys" inline @validity-change="detailCustomDatesValid=$event"/>
-       <button v-if="canEdit" class="btn" :disabled="!assessmentDirty||saving||mediaBusy" @click="saveAssessment">{{ t('保存补充字段') }}</button>
       </fieldset>
-      <dl class="detail-audit"><template v-if="detailFieldVisible('createdAt')"><dt>{{ t('创建时间') }}</dt><dd>{{formatCreatedAt(selected.createdAt)}}</dd></template><template v-if="detailFieldVisible('updatedAt')"><dt>{{ t('更新时间') }}</dt><dd>{{formatCreatedAt(selected.updatedAt)}}</dd></template><template v-if="detailFieldVisible('weightTotal')"><dt>{{ t('已保存总权重') }}</dt><dd class="total-value">{{selected.weightTotal??0}}</dd></template></dl>
+      <details class="detail-supplementary" :open="supplementaryExpanded" @toggle="supplementaryExpanded=($event.target as HTMLDetailsElement).open">
+       <summary><span>{{ t('补充字段与记录') }}</span><small v-if="supplementaryDirty">{{ t('有未保存的修改') }}</small><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary>
+       <fieldset :key="detailInputsVersion" :disabled="!canEdit||saving||mediaBusy"><h3 class="custom-title">{{ t('自定义字段') }}</h3><CustomFieldInputs object-type="requirement" v-model="detailDraft.customFields" :visible-keys="detailOtherFieldKeys" :disabled="!canEdit||saving||mediaBusy" inline @validity-change="detailCustomDatesValid=$event"/>
+        <button v-if="canEdit" class="btn" :disabled="!assessmentDirty||saving||mediaBusy" @click="saveAssessment">{{ t('保存补充字段') }}</button>
+       </fieldset>
+       <dl class="detail-audit"><template v-if="detailFieldVisible('createdAt')"><dt>{{ t('创建时间') }}</dt><dd>{{formatCreatedAt(selected.createdAt)}}</dd></template><template v-if="detailFieldVisible('updatedAt')"><dt>{{ t('更新时间') }}</dt><dd>{{formatCreatedAt(selected.updatedAt)}}</dd></template><template v-if="detailFieldVisible('weightTotal')"><dt>{{ t('已保存总权重') }}</dt><dd class="total-value">{{selected.weightTotal??0}}</dd></template></dl>
+      </details>
      </aside></template>
      </ResizableSplit>
     </div>
@@ -712,7 +803,7 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
   <DefectComposer v-if="defectContext" :key="defectContext.id" ref="defectComposer" :requirement-id="defectContext.id" :requirement-title="defectContext.title" :initial-sprint="defectContext.sprint" @created="defectCreated" @cancel="defectCancelled"/>
 
   <div v-if="leavePrompt" class="modal-shade detail-leave-shade" @click.self="finishLeave(false)"><section class="modal detail-leave-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-leave-title"><header><h2 id="detail-leave-title">{{t('保存修改后离开？')}}</h2><button :disabled="leaveSaving" :aria-label="t('继续编辑')" @click="finishLeave(false)">×</button></header><div class="modal-body"><p>{{t('需求有未保存的修改。你可以继续编辑、保存后离开，或明确放弃本次修改。')}}</p><p v-if="commentDraftDirty" class="inline-notice">{{t('评论尚未发表。请返回详情发表，或选择放弃；离开不会自动发表评论。')}}</p><p v-if="resourceDirty" class="inline-notice">{{t('Figma 链接尚未关联。请返回详情关联文件，或选择放弃；离开不会自动提交链接。')}}</p><p v-if="saving&&!leaveSaving" role="status">{{t('当前修改正在保存，请稍候。')}}</p><p v-if="leaveError" class="field-error" role="alert">{{t(leaveError)}}</p></div><footer><button class="btn" :disabled="leaveSaving" @click="finishLeave(false)">{{t('继续编辑')}}</button><button class="btn danger" :disabled="leaveSaving||saving" @click="finishLeave(true)">{{t('放弃修改并离开')}}</button><button v-if="!commentDraftDirty&&!resourceDirty&&canEdit" class="btn primary" :disabled="saving||mediaBusy||leaveSaving" @click="saveAndLeave">{{leaveSaving?t('保存中…'):t('保存并离开')}}</button></footer></section></div>
-  <div v-if="categoryModal" class="modal-shade category-modal-shade" @click.self="!categorySaving&&(categoryModal=null)">
+  <div v-if="categoryModal" class="modal-shade category-modal-shade" :class="{'slide-panel-shade':categoryModal!=='delete'}" @click.self="!categorySaving&&(categoryModal=null)">
    <form class="modal category-modal" role="dialog" aria-modal="true" aria-labelledby="category-dialog-title" @submit.prevent="saveCategory"><header><div><span class="eyebrow">{{ t('需求分类') }}</span><h2 id="category-dialog-title">{{categoryModal==='create'?t('创建分类'):categoryModal==='rename'?t('重命名分类'):t('删除分类')}}</h2></div><button type="button" :aria-label="t('关闭分类弹窗')" :disabled="categorySaving" @click="categoryModal=null">×</button></header><div class="modal-body"><template v-if="categoryModal==='delete'"><div class="category-delete-icon"><Icon name="folder" :size="28"/></div><p>{{t('确定删除「{name}」？',{name:categoryTarget.name})}}</p><p class="category-helper">{{t('{count} 条需求将移动到“未分类”，需求内容、评论和权重全部保留。',{count:categoryTarget.count})}}</p></template><template v-else><label for="category-name">{{ t('分类名称') }} <b>*</b></label><input id="category-name" v-model="categoryName" :disabled="categorySaving" maxlength="100" required autofocus :placeholder="t('例如：客户端 / 体验优化')"><p class="category-helper">{{ t('用于当前项目的需求归类。重命名会同步更新所有关联需求。') }}</p></template><p v-if="categoryError" class="inline-notice" role="alert">{{t(categoryError)}}</p></div><footer><button class="btn" type="button" :disabled="categorySaving" @click="categoryModal=null">{{ t('取消') }}</button><button :class="['btn',categoryModal==='delete'?'danger-category':'primary']" :disabled="categorySaving" type="submit">{{categorySaving?t('处理中…'):categoryModal==='delete'?t('删除并移至未分类'):t('保存分类')}}</button></footer></form>
   </div>
   <transition name="toast"><div v-if="toast" class="toast" role="status">{{t(toast,toastParams)}}</div></transition>
@@ -720,6 +811,8 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
 </template>
 
 <style scoped>
+.detail-supplementary{min-width:0;margin-top:8px;border-top:1px solid var(--line);padding-top:8px}.detail-supplementary>summary{display:flex;align-items:center;gap:8px;min-height:40px;cursor:pointer;list-style:none;font-size:13px;font-weight:600;color:var(--muted);border-radius:6px}.detail-supplementary>summary::-webkit-details-marker{display:none}.detail-supplementary>summary>span{flex:1;min-width:0;overflow-wrap:anywhere}.detail-supplementary>summary>small{font-size:11px;font-weight:400;color:var(--primary)}.detail-supplementary>summary:focus-visible{outline:2px solid var(--primary);outline-offset:2px}.detail-supplementary>summary>:last-child{flex-shrink:0;transition:transform .16s ease}.detail-supplementary[open]>summary>:last-child{transform:rotate(90deg)}.detail-supplementary>fieldset{padding-top:8px}.detail-supplementary .custom-title{font-size:12px;margin:8px 0 12px}@media(prefers-reduced-motion:reduce){.detail-supplementary>summary>:last-child{transition:none}}
+.detail-personnel-fields{display:grid;gap:16px;margin:16px 0;min-width:0}.detail-personnel-fields .detail-assignees{min-width:0}.detail-personnel-fields .detail-assignees>label{display:block;margin-bottom:6px;font-size:13px;color:var(--muted)}
 .req-title-open{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:0;border:0;border-radius:3px;background:transparent;color:inherit;font:inherit;text-align:left;box-shadow:none;cursor:pointer}.req-title-open b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.req-title-open:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
 .description-read-surface{min-height:260px;min-width:0}.description-read-surface.editable{cursor:text;border-radius:6px}.description-read-surface.editable:hover{background:var(--surface-soft)}
 .requirement-parent-context{flex:none;display:flex;align-items:center;gap:12px;padding:11px 28px;border-bottom:1px solid var(--line);background:var(--surface-soft,var(--surface));font-size:12px;color:var(--muted)}.requirement-parent-context>span:first-child{flex:none;font-weight:600}.requirement-parent-context>button{display:flex;align-items:center;gap:8px;min-width:0;background:transparent;border:0;color:var(--primary);padding:3px 0;font:inherit;text-align:left;cursor:pointer}.requirement-parent-context>button>span{overflow-wrap:anywhere}.requirement-parent-context>button>b{flex:none;font-size:11px}.requirement-parent-context>button:disabled{opacity:.55;cursor:wait}.requirement-parent-context>button:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:3px}.requirement-parent-context>div{line-height:1.6}.requirement-parent-context .link{font:inherit}@media(max-width:700px){.requirement-parent-context{padding:10px 16px;align-items:flex-start;gap:9px}.requirement-parent-context>button{flex-wrap:wrap}}
@@ -732,7 +825,22 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
 .requirements-sidebar-content{display:flex;flex:1;min-height:0;flex-direction:column}.requirements-sidebar-content>header,.requirements-sidebar-content>nav,.requirements-sidebar-content>.category-section-title,.requirements-sidebar-content>.category-search,.requirements-sidebar-content>.new-category-link,.requirements-sidebar-content>.pool-sidebar-footer{flex-shrink:0}.requirements-sidebar-content>.category-folders{display:block;min-height:80px;overflow:auto;flex:1}.requirements-sidebar-content>.new-category-link{min-height:32px}.requirements-sidebar-content>.pool-sidebar-footer{margin-top:0;padding-top:8px}
 .req-toolbar{flex-wrap:wrap;gap:8px;padding-bottom:12px}.req-toolbar select{display:block!important;max-width:200px}.req-toolbar .search{min-width:190px;max-width:250px;flex:1}.req-toolbar .search input{min-width:0;width:100%}
 .req-viewbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 14px;font-size:12px;color:#667085}.req-viewbar>div{display:flex;align-items:center;gap:8px}.req-viewbar select{border:1px solid var(--line);border-radius:6px;padding:7px;background:white;color:#475467}.req-viewbar .btn{display:inline-flex;align-items:center;gap:6px}.req-viewbar small{background:#efefff;color:#5b5ce2;border-radius:4px;padding:1px 5px}.list-heading .btn{display:inline-flex;align-items:center;gap:6px}
-.configurable-table{table-layout:fixed;border-collapse:separate;border-spacing:0}.configurable-table th,.configurable-table td{height:46px;max-width:none;overflow:hidden;text-overflow:ellipsis;padding:10px 12px;border-bottom:1px solid #eaecf0}.configurable-table th{height:40px}.configurable-table .sticky-code,.configurable-table .sticky-title{position:sticky;background:#fff;z-index:2}.configurable-table .sticky-code{left:0}.configurable-table .sticky-title{left:112px;box-shadow:1px 0 #eaecf0}.configurable-table th.sticky-code,.configurable-table th.sticky-title{background:#fafbfc;z-index:4}.configurable-table tr:hover td,.configurable-table tr.selected td{background:#f5f4ff}
+.configurable-table{--requirement-code-width:118px;--requirement-bulk-width:0px;table-layout:fixed;border-collapse:separate;border-spacing:0}
+.configurable-table th,.configurable-table td{height:46px;max-width:none;overflow:hidden;text-overflow:ellipsis;padding:10px 12px;border-bottom:1px solid #eaecf0}
+.configurable-table th{height:40px}
+/*
+ * 列设置始终把编号、标题固定在前两列。选择框存在时，三个固定列的 left
+ * 需要一并右移；此前固定写死 0/112，滚动后会遮住编号或切到标题上。
+ */
+.configurable-table .sticky-selection,.configurable-table .sticky-code,.configurable-table .sticky-title{position:sticky;background:#fff}
+.configurable-table .sticky-selection{left:0;z-index:4;width:var(--requirement-bulk-width);min-width:var(--requirement-bulk-width);max-width:var(--requirement-bulk-width);padding:0 8px;text-align:center}
+.configurable-table .sticky-selection input{display:block;width:16px;height:16px;margin:auto}
+.configurable-table .sticky-code{left:var(--requirement-bulk-width);z-index:3;width:var(--requirement-code-width);min-width:var(--requirement-code-width);max-width:var(--requirement-code-width);overflow:visible;text-overflow:clip}
+.configurable-table .sticky-code :deep(.requirement-code-control){display:inline-flex;min-width:0;max-width:100%}
+.configurable-table .sticky-code :deep(.requirement-code-value){font-variant-numeric:tabular-nums;letter-spacing:.025em}
+.configurable-table .sticky-title{left:calc(var(--requirement-bulk-width) + var(--requirement-code-width));z-index:2;box-shadow:1px 0 #eaecf0}
+.configurable-table th.sticky-selection,.configurable-table th.sticky-code,.configurable-table th.sticky-title{background:#fafbfc;z-index:6}
+.configurable-table tr:hover td,.configurable-table tr.selected td{background:#f5f4ff}
 .req-title-link{display:flex;align-items:center;gap:8px;width:100%;padding:0;border:0;background:none;color:#273249;text-align:left;font-size:13px;cursor:pointer}.req-title-link b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.req-title-link .type-icon{flex:none}.requirement-tree-toggle{display:grid;place-items:center;flex:none;width:18px;height:18px;padding:0;border:0;border-radius:4px;background:transparent;color:#667085;cursor:pointer;font:inherit;font-size:15px;line-height:1}.requirement-tree-toggle:hover,.requirement-tree-toggle:focus-visible{background:#eeedff;color:#514cc7;outline:0}.requirement-tree-branch{flex:none;width:18px;color:#98a2b3;font-size:14px}.requirement-child-row td{background:#fcfcfd}.numeric-cell{font-variant-numeric:tabular-nums}.total-value{color:#514cc7;font-variant-numeric:tabular-nums}
 .req-tags{display:flex;align-items:center;gap:5px;overflow:hidden}.colored-tag{display:inline-block;padding:3px 7px;border-radius:4px;border:1px solid;font-size:11px;line-height:16px;max-width:150px;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
 .requirement-drawer{width:min(1220px,90vw)}.drawer-title h2{overflow-wrap:anywhere;font-size:19px}.drawer-title>div{display:flex;align-items:center;flex-shrink:0}.detail-time{font-size:11px;color:#667085;margin:9px 0 0}.detail-alert{margin:0 20px 10px}.detail-main{min-width:0;padding:24px}.detail-props{width:280px;flex:none;padding:20px}.detail-props fieldset{border:0;padding:0;margin:0;min-width:0}.detail-props label{grid-template-columns:80px minmax(0,1fr)}.detail-props select{min-width:0}.detail-audit{font-size:12px;line-height:1.8;border-top:1px solid var(--line);padding-top:16px}.detail-audit dt{color:#667085}.detail-audit dd{margin:0 0 10px;color:#344054}
@@ -746,23 +854,28 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
 
 <style scoped>
 .description-read-surface{min-height:260px;min-width:0}.description-read-surface.editable{cursor:text;border-radius:6px}.description-read-surface.editable:hover{background:var(--surface-soft)}
+/* 分类计数固定右侧轨道；不同位数不再随名称长度漂移。 */
+.requirements-sidebar .category-select em{float:none;flex:0 0 28px;min-width:28px;margin-left:auto;text-align:right;font-variant-numeric:tabular-nums}
 .requirement-drawer { container: requirement-detail / inline-size; }
 .requirement-drawer .drawer-head { flex: none; padding: 22px 28px 18px; border-bottom: 1px solid #e7eaf0; }
 .drawer-width-hint { margin-left: auto; color: #a0a8b8; font-size: 10px; }
-.requirement-drawer .drawer-title { gap: 20px; align-items: flex-start; }
-.requirement-drawer .drawer-title h2 { flex: 1; min-width: 0; line-height: 1.5; font-size: 22px; }
-.requirement-drawer .drawer-title > div { gap: 6px; padding-top: 9px; }
+.requirement-drawer .drawer-title { width:100%; min-width:0; gap:20px; align-items:flex-start; }
+/* 详情标题和右侧操作需要在任何抽屉宽度下各自收缩；不能由长标题把操作推到屏外。 */
+.requirement-drawer .drawer-title h2 { flex:1 1 auto; min-width:0; max-width:100%; line-height:1.5; font-size:22px; overflow-wrap:anywhere; }
+.requirement-drawer .drawer-title > div { min-width:0; max-width:100%; gap:6px; padding-top:9px; justify-content:flex-end; }
 .requirement-drawer .drawer-title button { display: inline-flex; align-items: center; gap: 5px; border-radius: 6px; font-size: 12px; }
 .requirement-drawer .drawer-title button:hover, .requirement-drawer .drawer-title button[aria-pressed=true] { color: #514cc7; background: #f0efff; }
 .detail-workspace { position: relative; min-width: 0; overflow: hidden; }
 .detail-split { flex: 1; min-width: 0; min-height: 0; width: 100%; }
 .detail-split :deep(.split-main) { overflow: hidden; }
 .detail-reading { display: flex; min-width: 0; min-height: 0; height: 100%; }
-.detail-navigation { display: flex; flex-direction: column; flex: 0 0 166px; padding: 22px 12px 16px; border-right: 1px solid #e9edf3; background: #fafbfe; overflow-y: auto; }
+.detail-navigation { display: flex; flex-direction: column; flex: 0 0 176px; min-width: 0; max-width: 100%; padding: 22px 12px 16px; border-right: 1px solid #e9edf3; background: #fafbfe; overflow-x: hidden; overflow-y: auto; }
 .detail-nav-caption { display: block; padding: 0 10px 10px; color: #98a2b3; font-size: 10px; letter-spacing: .07em; }
-.detail-navigation button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 10px; margin-bottom: 4px; border: 0; border-radius: 7px; background: transparent; color: #667085; text-align: left; font-size: 12px; white-space: nowrap; }
-.detail-navigation button > span { flex: 1; }
-.detail-navigation button small { color: #98a2b3; font-size: 10px; font-variant-numeric: tabular-nums; }
+.detail-navigation button { display:flex; align-items:center; gap:9px; width:100%; min-width:0; max-width:100%; padding:11px 10px; margin-bottom:4px; border:0; border-radius:7px; background:transparent; color:#667085; text-align:left; font-size:var(--ui-font-caption,12px)!important; line-height:1.35; white-space:nowrap; }
+.detail-navigation button > :deep(.svg-icon) { flex:none; margin-top:0; }
+/* 标签只占自己的剩余空间；完整名称仍由 title 暴露，避免“人员与开发评估”拆成难读的两行。 */
+.detail-navigation button > span { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.detail-navigation button small { flex: none; margin-top: 1px; color: #98a2b3; font-size: 10px; font-variant-numeric: tabular-nums; }
 .detail-navigation button:hover { background: #f0f2f8; }
 .detail-navigation button.active { background: #eeedff; color: #514cc7; font-weight: 600; }
 .detail-navigation button.active small { color: #7770cc; }
@@ -806,7 +919,7 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
 .child-requirement-drawer :deep(.requirement-editor) { height: 100%; min-height: 0; }
 @container requirement-detail (max-width: 1060px) {
  .requirement-drawer .detail-main { padding: 26px; }
- .detail-navigation { flex-basis: 148px; padding: 20px 8px; }
+ .detail-navigation { flex-basis: 156px; padding: 20px 8px; }
  .drawer-width-hint { display: none; }
 }
 @container requirement-detail (max-width: 760px) {
@@ -837,7 +950,9 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
  .requirement-drawer .detail-props{position:static;width:100%;max-width:100%;overflow:visible}
  .detail-reading{display:block;height:auto;min-height:0}
  .detail-navigation{position:sticky;top:0;z-index:2;display:flex;flex-direction:row;gap:5px;flex:none;max-width:100%;padding:9px 12px;overflow:auto;border-right:0;border-bottom:1px solid var(--line);background:var(--surface)}
- .detail-navigation button{width:auto;flex:none;padding:10px;margin:0}
+ .detail-navigation button{width:auto;flex:none;align-items:center;min-width:0;max-width:calc(42vw);padding:10px;margin:0;white-space:nowrap}
+ .detail-navigation button > :deep(.svg-icon){margin-top:0}
+ .detail-navigation button > span{flex:0 1 auto;max-width:calc(42vw - 54px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .detail-tag-section{display:flex;flex:none;gap:5px;padding:0 0 0 5px;margin:0;border:0}
  .detail-nav-caption,.detail-nav-summary{display:none}
  .requirement-drawer .detail-main{overflow:visible;width:100%;min-width:0;padding:20px 16px}
@@ -861,7 +976,7 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
  .requirements-v4 .pool-heading{flex-wrap:wrap;gap:12px}
  .requirements-v4 .req-viewbar>div{justify-content:flex-start}
  .requirements-v4 .table-wrap{max-width:100%;overflow:auto}
- .configurable-table .sticky-code,.configurable-table .sticky-title{position:static!important}
+ .configurable-table .sticky-selection,.configurable-table .sticky-code,.configurable-table .sticky-title{position:static!important}
  .pagination{flex-wrap:wrap;min-height:50px;height:auto}
  .pagination>span{margin-right:auto;overflow-wrap:anywhere}
 }
@@ -893,6 +1008,7 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
 .requirement-board-card:is(:hover,:focus-within){background:var(--card);border-color:var(--primary);box-shadow:none}
 .requirement-board-summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;min-height:46px;padding:8px 8px 8px 12px}
 .requirement-board-summary>.requirement-code-control{min-width:0;color:var(--muted-foreground);font-size:11px}
+.requirement-board-delay{grid-column:1/-1;justify-self:start}
 .requirement-board-summary strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--foreground);font-size:13px;line-height:1.5;font-weight:600}
 .requirement-board-disclosure{display:inline-flex;align-items:center;gap:3px;min-height:30px;border:0;border-radius:calc(var(--radius) - 3px);padding:4px 6px;background:transparent;color:var(--muted-foreground);font-size:11px;white-space:nowrap}
 .requirement-board-disclosure:hover{background:var(--accent);color:var(--accent-foreground)}
@@ -920,10 +1036,15 @@ onBeforeUnmount(()=>{detailDisposed=true;pendingLeave?.(false);pendingLeave=null
 
 <style scoped>
 .description-read-surface{min-height:260px;min-width:0}.description-read-surface.editable{cursor:text;border-radius:6px}.description-read-surface.editable:hover{background:var(--surface-soft)}
-/* 分类排序不使用拖拽：提交完整目录快照前始终保持当前顺序，减少筛选或并发时的误操作。 */
-.category-actions{align-items:center}
-.category-reorder-actions{display:flex;flex:none;gap:2px}
-.requirements-sidebar .category-actions .category-move{flex:none;width:24px;min-height:26px;padding:3px;font-size:13px;line-height:1}
-.requirements-sidebar .category-actions .category-move:disabled{opacity:.38;cursor:not-allowed}
-.requirements-sidebar .category-actions button:focus-visible{outline:2px solid var(--ring,#625de0);outline-offset:1px}
+/* 分类排序不使用拖拽：操作区固定为两行网格，窄侧栏也不会把重命名、删除挤出容器。 */
+.requirements-sidebar .category-menu-trigger:focus-visible{outline:2px solid var(--ring,#625de0);outline-offset:1px}
+.requirements-sidebar .category-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:stretch;gap:5px;min-width:0;padding:7px;background:var(--surface-soft,#f8fafc);border-top:1px solid var(--line,#e9edf3)}
+.requirements-sidebar .category-reorder-actions{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:5px;min-width:0}
+.requirements-sidebar .category-actions button{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;width:100%;min-height:29px;padding:5px 7px;border:1px solid var(--line,#e0e5ed);border-radius:5px;background:var(--surface,#fff);color:var(--muted-foreground,#5b6677);font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.requirements-sidebar .category-actions button>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.requirements-sidebar .category-actions button:hover:not(:disabled){border-color:color-mix(in srgb,var(--primary,#625de0) 34%,var(--line,#e0e5ed));background:var(--primary-soft,#f2f3ff);color:var(--primary,#625de0)}
+.requirements-sidebar .category-actions .category-action.danger{color:#b54751;border-color:#f0d6d9}.requirements-sidebar .category-actions .category-action.danger:hover:not(:disabled){border-color:#e7b8be;background:#fff7f7;color:#a63a45}
+.requirements-sidebar .category-actions button:disabled{opacity:.42;cursor:not-allowed}.requirements-sidebar .category-actions button:focus-visible{outline:2px solid var(--ring,#625de0);outline-offset:1px}
+@media(max-width:760px){.requirements-v4 .category-folder{min-width:176px}.requirements-sidebar .category-actions{gap:4px;padding:6px}.requirements-sidebar .category-reorder-actions{gap:4px}.requirements-sidebar .category-actions button{min-height:32px}}
+.iteration-delay-badge{display:inline-flex;align-items:center;flex:none;padding:3px 7px;border-radius:5px;border:1px solid #fdba74;background:#ffedd5;color:#9a3412;font-size:11px;font-weight:600;line-height:1.4;white-space:nowrap}.dependency-blocked-badge{display:inline-flex;align-items:center;flex:none;padding:3px 7px;border-radius:5px;border:1px solid #f5b8b4;background:#fff0f0;color:#b42318;font-size:11px;font-weight:650;line-height:1.4;white-space:nowrap}.detail-delay-count{margin:8px 0;font-size:12px;color:var(--muted)}.req-title-link>.iteration-delay-badge,.req-title-link>.dependency-blocked-badge{margin-left:6px}
 </style>

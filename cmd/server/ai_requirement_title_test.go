@@ -271,8 +271,8 @@ func TestAITitleHourlyAndConcurrentReservationsBoundCost(t *testing.T) {
 			t.Fatalf("hourly request%d: %d %s", i, w.Code, w.Body.String())
 		}
 	}
-	if calls.Load() != 10 {
-		t.Fatalf("quota made extra paid calls %d", calls.Load())
+	if calls.Load() != 1 {
+		t.Fatalf("identical successful inputs were charged again %d", calls.Load())
 	}
 	// All failed/generating/completed reservations count toward tenant quotas.
 	for i := 0; i < 70; i++ {
@@ -281,7 +281,7 @@ func TestAITitleHourlyAndConcurrentReservationsBoundCost(t *testing.T) {
 		}
 	}
 	w := apiRequest(a, "POST", titlePath, "u_back", projectID, titleBody(nil))
-	if w.Code != 429 || calls.Load() != 10 {
+	if w.Code != 429 || calls.Load() != 1 {
 		t.Fatalf("tenant quota bypassed %d %s", w.Code, w.Body.String())
 	}
 	// Independent fixture: a second request by the same user cannot join a
@@ -331,8 +331,7 @@ func TestAITitleCancellationImpersonationAndAuditFailure(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		aiMock(a, func(r *http.Request) (*http.Response, error) { cancel(); return nil, r.Context().Err() })
-		b := *a
-		b.user = "u_front"
+		b := administrationSessionFixture(t, a, "u_front")
 		r := httptest.NewRequest("POST", titlePath, strings.NewReader(titleBody(nil))).WithContext(ctx)
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()

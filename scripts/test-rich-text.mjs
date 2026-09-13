@@ -20,6 +20,7 @@ const codeHighlight=evaluate(await read('src/codeHighlight.ts'),{'lowlight':lowl
 const markdown=evaluate(await read('src/markdownImport.ts'),{'marked':marked,'./richText':rich})
 const pasteHelpers=evaluate(await read('src/editorPaste.ts'),{'./codeHighlight':codeHighlight,'./markdownImport':markdown})
 const source=await read('src/components/RichTextEditor.vue'), assetSource=await read('src/components/RichTextAsset.vue')
+const visibleAssetSource=await read('src/visibleAsset.ts')
 const people=[{id:'u_one',name:'同名',email:'one@example.test',active:true,projectRole:'frontend'},{id:'u_two',name:'同名',email:'two@example.test',active:true,projectRole:'backend'},{id:'u_old',name:'已停用',active:false}]
 const paragraph=text=>({type:'paragraph',...(text?{content:[{type:'text',text}]}:{})})
 const doc=(...content)=>({type:'doc',content})
@@ -195,24 +196,67 @@ await test('paste accepts only event-provided file data and retains filtered HTM
   assert.equal(source.includes('navigator.clipboard.read'),false);m.stop()
 })
 
-async function asset({id=1,requirementId=9,data=null,kind='image',download}={}){
+function assetVisibility(supported=true){
+  const observers=[],exports={}
+  class Observer {
+    constructor(callback,options){this.callback=callback;this.options=options;this.disconnected=false;observers.push(this)}
+    observe(element){this.element=element}
+    disconnect(){this.disconnected=true}
+  }
+  new Function('exports','IntersectionObserver',transpile(visibleAssetSource))(exports,supported?Observer:undefined)
+  return {module:exports,observers,emit({isIntersecting=true,width=600,target}={},observer=observers.at(-1)){
+    assert.ok(observer,'asset visibility must be registered after its anchor mounts')
+    observer.callback([{target:target??observer.element,isIntersecting,boundingClientRect:{width}}])
+  }}
+}
+async function asset({id=1,requirementId=9,data=null,kind='image',download,visibilitySupported=true}={}){
   const props=Vue.reactive({node:{type:{name:kind},attrs:{attachmentId:id,data,name:'截图.png'}},deleteNode:()=>{removed++},selected:false}),context=Vue.computed(()=>state),state=Vue.reactive({requirementId,readonly:false,disabled:false}),events=[],unmounts=[],scope=Vue.effectScope(),exports={}
+  const visibility=assetVisibility(visibilitySupported),paths=[],metadataPaths=[],timers=[]
   let removed=0,urlIndex=0
   const urls={createObjectURL:()=>{const url='blob:test-'+(++urlIndex);events.push(['create',url]);return url},revokeObjectURL:url=>events.push(['revoke',url])}
-  const imports={vue:{...Vue,inject:()=>context,onMounted:()=>{},onBeforeUnmount:callback=>unmounts.push(callback)},'@tiptap/vue-3':{NodeViewWrapper:{},nodeViewProps:{}},'../api':{apiDownload:download||(async()=>new Blob([png]))},'../i18n':{t:value=>value},'../richText':rich}
-  const raw=assetSource.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]+'\nexport {imageURL,loading,error,load,remove}'
-  scope.run(()=>new Function('require','exports','defineProps','URL',transpile(raw))(id=>imports[id],exports,()=>props,urls))
-  return {...exports,props,state,events,get removed(){return removed},stop:()=>{for(const unmount of unmounts)unmount();scope.stop()}}
+  const imports={vue:{...Vue,inject:()=>context,onMounted:()=>{},onBeforeUnmount:callback=>unmounts.push(callback)},'@tiptap/vue-3':{NodeViewWrapper:{},nodeViewProps:{}},'../api':{apiDownload:path=>{paths.push(path);return download?download(path):Promise.resolve(new Blob([png]))},api:async path=>{metadataPaths.push(path);return {category:'image'}}},'../visibleAsset':visibility.module,'../i18n':{t:value=>value},'../richText':rich}
+  const raw=assetSource.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]+'\nexport {imageURL,loading,error,load,download,remove,visibilityAnchor}'
+  const documentMock={createElement:tag=>{assert.equal(tag,'a');return {click(){events.push(['download',this.href,this.download])}}}}
+  scope.run(()=>new Function('require','exports','defineProps','URL','document','setTimeout',transpile(raw))(id=>imports[id],exports,()=>props,urls,documentMock,callback=>timers.push(callback)))
+  exports.visibilityAnchor.value={}
+  return {...exports,props,state,events,paths,metadataPaths,visibility,timers,get removed(){return removed},stop:()=>{for(const unmount of unmounts)unmount();scope.stop()}}
 }
-await test('asset node views fetch authenticated requirement URLs and revoke previews on teardown',async()=>{
-  const paths=[],m=await asset({download:async path=>{paths.push(path);return new Blob([png])}});await flush()
-  assert.deepEqual(paths,['/requirements/9/attachments/1']);assert.match(m.imageURL.value,/^blob:/)
+await test('offscreen and collapsed asset views defer downloads until visible, then release authenticated previews',async()=>{
+  const m=await asset();await flush()
+  assert.deepEqual(m.paths,[]);assert.deepEqual(m.metadataPaths,[]);assert.equal(m.imageURL.value,'');assert.equal(m.loading.value,false)
+  assert.equal(m.visibility.observers.length,1)
+  m.visibility.emit({isIntersecting:false});m.visibility.emit({width:0});m.visibility.emit({target:{}});await flush()
+  assert.deepEqual(m.paths,[]);assert.deepEqual(m.metadataPaths,[],'offscreen/closed panels must not fetch metadata either')
+  m.visibility.emit();await flush()
+  assert.deepEqual(m.paths,['/requirements/9/attachments/1']);assert.deepEqual(m.metadataPaths,['/requirements/9/attachments/1?metadata=1']);assert.match(m.imageURL.value,/^blob:/)
+  m.visibility.emit();await flush();assert.equal(m.paths.length,1);assert.equal(m.metadataPaths.length,1,'a consumed visibility callback must stay inactive')
+  const url=m.imageURL.value;m.stop();assert.ok(m.events.some(event=>event[0]==='revoke'&&event[1]===url));assert.equal(m.visibility.observers[0].disconnected,true)
+})
+await test('explicit image and attachment actions load without visibility and release their object URLs',async()=>{
+  const m=await asset();await flush();assert.equal(m.paths.length,0)
+  await m.load();assert.deepEqual(m.paths,['/requirements/9/attachments/1']);assert.match(m.imageURL.value,/^blob:/)
+  m.visibility.emit();await flush();assert.equal(m.paths.length,1,'becoming visible must reuse an explicitly loaded image')
   const url=m.imageURL.value;m.stop();assert.ok(m.events.some(event=>event[0]==='revoke'&&event[1]===url))
+  const file=await asset({kind:'attachment',visibilitySupported:false});await flush()
+  assert.equal(file.visibility.observers.length,0);assert.equal(file.paths.length,0)
+  await file.download();assert.deepEqual(file.paths,['/requirements/9/attachments/1']);assert.equal(file.events.filter(event=>event[0]==='download').length,1)
+  const savedURL=file.events.find(event=>event[0]==='download')[1];file.stop();assert.ok(file.events.some(event=>event[0]==='revoke'&&event[1]===savedURL))
+  for(const timer of file.timers)timer()
 })
 await test('late asset downloads cannot display an old requirement image and readonly blocks removing it',async()=>{
-  const pending=deferred(),m=await asset({download:path=>path.includes('/9/')?pending.promise:Promise.resolve(new Blob([png]))});m.state.requirementId=10;await flush()
+  const pending=deferred(),m=await asset({download:path=>path.includes('/9/')?pending.promise:Promise.resolve(new Blob([png]))});await flush()
+  const oldObserver=m.visibility.observers[0];m.visibility.emit();await flush();assert.equal(m.loading.value,true);assert.deepEqual(m.paths,['/requirements/9/attachments/1'])
+  m.state.requirementId=10;await flush();assert.equal(oldObserver.disconnected,true);assert.equal(m.imageURL.value,'');assert.equal(m.paths.length,1)
+  m.visibility.emit({},oldObserver);await flush();assert.equal(m.paths.length,1,'late old-scope visibility must not start a new download')
+  m.visibility.emit();await flush();assert.deepEqual(m.paths,['/requirements/9/attachments/1','/requirements/10/attachments/1'])
   const current=m.imageURL.value;pending.resolve(new Blob([png]));await flush();assert.equal(m.imageURL.value,current);assert.equal(m.events.filter(event=>event[0]==='create').length,1)
   m.state.readonly=true;m.remove();assert.equal(m.removed,0);m.state.readonly=false;m.state.disabled=true;m.remove();assert.equal(m.removed,0);m.stop()
+})
+await test('changing an asset releases its loaded blob and teardown invalidates late downloads and visibility callbacks',async()=>{
+  const m=await asset();await flush();m.visibility.emit();await flush();const url=m.imageURL.value
+  m.props.node.attrs.attachmentId=2;await flush();assert.equal(m.imageURL.value,'');assert.equal(m.paths.length,1);assert.ok(m.events.some(event=>event[0]==='revoke'&&event[1]===url));m.stop()
+  const pending=deferred(),late=await asset({download:()=>pending.promise});await flush();late.visibility.emit();await flush();assert.equal(late.loading.value,true)
+  late.stop();late.visibility.emit();pending.resolve(new Blob([png]));await flush();assert.equal(late.paths.length,1);assert.equal(late.events.filter(event=>event[0]==='create').length,0);assert.equal(late.visibility.observers[0].disconnected,true)
 })
 await test('both Vue templates compile and all interactive controls avoid implicit form submission',()=>{
   for(const [filename,content]of[['RichTextEditor.vue',source],['RichTextAsset.vue',assetSource]]){

@@ -5,7 +5,7 @@ import { api } from '../api'
 import { t } from '../i18n'
 import { requirementTitleError, titleDescriptionError } from '../requirementTitle'
 
-type Capability = { configured:boolean; enabled:boolean; model:string; canGenerate:boolean; maxDescriptionLength:number; maxTitleLength:number }
+type Capability = { configured:boolean; enabled:boolean; model:string; canGenerate:boolean; maxDescriptionLength:number; maxTitleLength:number; baseUrl?:string }
 const props = defineProps<{ title:string; description:string; document?:unknown; requirementId?:number; projectId:string; userId:string; actorKey?:string; disabled?:boolean; canConfigure?:boolean }>()
 const emit = defineEmits<{ (event:'generated',title:string):void; (event:'busy',value:boolean):void }>()
 const capability = ref<Capability|null>(null), loading = ref(false), generating = ref(false), error = ref(''), notice = ref(''), locked = ref(false)
@@ -36,7 +36,7 @@ async function load() {
   readController?.abort(); const controller = new AbortController(); readController = controller
   loading.value = true; error.value = ''
   try {
-    const data = await api<Capability>('/ai/requirement-title', { headers:{'X-DevFlow-Project':props.projectId}, signal:controller.signal })
+    const data = await api<Capability>('/ai/requirement-title', { headers:{'X-TaskLoom-Project':props.projectId}, signal:controller.signal })
     if (!current(key) || version !== readVersion) return
     if (!data || typeof data.configured !== 'boolean' || typeof data.enabled !== 'boolean' || typeof data.canGenerate !== 'boolean' || typeof data.model !== 'string' || !Number.isSafeInteger(data.maxDescriptionLength) || data.maxDescriptionLength < 1 || data.maxDescriptionLength > 1000000 || data.maxTitleLength !== 80) throw Error('AI 标题能力返回格式不正确，请重试或手动填写标题')
     capability.value = data
@@ -52,12 +52,12 @@ async function generate():Promise<boolean> {
   if (!capability.value.canGenerate) { error.value = '当前身份没有 AI 标题生成权限，请手动填写标题'; return false }
   if (!capability.value.configured || !capability.value.enabled) { error.value = '企业尚未配置或启用 AI，请手动填写标题或联系管理员'; return false }
   if (inputError.value) { error.value = inputError.value; return false }
-  if (!window.confirm(t('本次仅将需求描述的纯文本发送给 OpenAI，用于生成标题；不发送图片、附件文件、人员字段或其他字段。描述中手动写入的姓名等文字仍会发送。可能产生模型费用。生成后需您确认并再次保存，是否继续？'))) return false
+  if (!window.confirm(t('本次仅将需求描述的纯文本发送给企业配置的 AI 服务，用于生成标题；不发送图片、附件文件、人员字段或其他字段。描述中手动写入的姓名等文字仍会发送。可能产生模型费用。生成后需您确认并再次保存，是否继续？'))) return false
   if (!current(key) || props.disabled || props.title.trim()) return false
   const revision = ++generationVersion, originalInput = input(), description = props.description, requirementId = props.requirementId
   const controller = new AbortController(); generationController = controller; generating.value = true
   try {
-    const result = await api<{title:string;model:string}>('/ai/requirement-title', { method:'POST', headers:{'X-DevFlow-Project':props.projectId}, signal:controller.signal, body:JSON.stringify({description,confirmed:true,...(requirementId ? {requirementId} : {})}) })
+    const result = await api<{title:string;model:string}>('/ai/requirement-title', { method:'POST', headers:{'X-TaskLoom-Project':props.projectId}, signal:controller.signal, body:JSON.stringify({description,confirmed:true,...(requirementId ? {requirementId} : {})}) })
     if (!current(key) || revision !== generationVersion || input() !== originalInput || props.disabled || controller.signal.aborted) return false
     if (!result || requirementTitleError(result.title, capability.value.maxTitleLength) || typeof result.model !== 'string' || !result.model) throw Error('AI 返回的标题不符合 2–80 字符单行规范，请重试或手动填写')
     generating.value = false; generationController = null
@@ -78,7 +78,7 @@ defineExpose({ generate, cancel, generating })
  <section class="title-assistant" :aria-label="t('AI 需求标题')" :aria-busy="loading||generating">
   <div class="title-assistant-actions"><AIButton :busy="generating" :disabled="!canStart" @click="generate">{{t(generating?'正在总结标题…':'AI 生成标题')}}</AIButton><button v-if="generating" type="button" class="link" @click="cancel(true)">{{t('取消生成')}}</button></div>
   <!-- 说明默认收起，保留完整的数据边界和人工确认提示，避免挤占需求正文编辑空间。 -->
-  <details class="title-assistant-details"><summary :aria-label="t('AI 标题说明')" :title="t('AI 标题说明')"><span aria-hidden="true">ⓘ</span></summary><div><strong>{{t('AI 标题说明')}}</strong><p v-if="capability?.model">{{t('模型')}} · {{capability.model}}</p><AIButton v-if="!generating&&(!capability||!available)" :busy="loading" :disabled="disabled||locked" @click="load">{{t('重新检查 AI 配置')}}</AIButton><p>{{t('AI 标题为 2–80 个字符。标题留空提交时可从描述生成，已有标题不会被覆盖；生成后请确认并再次保存。')}}</p><p v-if="capability&&!available&&!locked">{{t(capability.canGenerate?'企业尚未配置或启用 AI，请手动填写标题或联系管理员':'当前身份没有 AI 标题生成权限，请手动填写标题')}} <router-link v-if="canConfigure" to="/settings/ai">{{t('配置 AI 服务')}}</router-link></p><p v-if="generating">{{t('可取消生成或继续修改标题、描述。取消只停止等待，已发出的请求可能仍产生费用。')}}</p></div></details>
+  <details class="title-assistant-details"><summary :aria-label="t('AI 标题说明')" :title="t('AI 标题说明')"><span aria-hidden="true">ⓘ</span></summary><div><strong>{{t('AI 标题说明')}}</strong><p v-if="capability?.model">{{t('模型')}} · {{capability.model}}</p><p v-if="capability?.baseUrl">{{t('服务地址')}} · {{capability.baseUrl}}</p><AIButton v-if="!generating&&(!capability||!available)" :busy="loading" :disabled="disabled||locked" @click="load">{{t('重新检查 AI 配置')}}</AIButton><p>{{t('AI 标题为 2–80 个字符。标题留空提交时可从描述生成，已有标题不会被覆盖；生成后请确认并再次保存。')}}</p><p v-if="capability&&!available&&!locked">{{t(capability.canGenerate?'企业尚未配置或启用 AI，请手动填写标题或联系管理员':'当前身份没有 AI 标题生成权限，请手动填写标题')}} <router-link v-if="canConfigure" to="/settings/ai">{{t('配置 AI 服务')}}</router-link></p><p v-if="generating">{{t('可取消生成或继续修改标题、描述。取消只停止等待，已发出的请求可能仍产生费用。')}}</p></div></details>
   <p v-if="locked" class="title-assistant-error" role="alert">{{t('项目或账号已变化，请刷新页面后继续')}}</p><p v-else-if="error" class="title-assistant-error" role="alert">{{t(error)}}</p><p v-if="notice" role="status">{{t(notice)}}</p>
   <p v-if="loading&&!capability" role="status">{{t('正在检查 AI 标题功能…')}}</p>
  </section>

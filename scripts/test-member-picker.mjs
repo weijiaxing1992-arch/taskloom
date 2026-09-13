@@ -69,7 +69,7 @@ await test('keyboard active options scroll into view, Escape is consumed and out
  m.c.search();await flush();m.doc.dispatch('pointerdown',{target:new Element()});assert.equal(m.c.opened.value,false);m.c.search();await flush();m.doc.dispatch('focusin',{target:new Element()});assert.equal(m.c.opened.value,false);m.stop()
 })
 await test('visual viewport/ancestor scroll adjusts panel, hidden origin closes, cleanup removes all listeners',async()=>{
- const m=mount();m.c.search();await flush();assert.equal(m.c.panelStyle.value.maxHeight,'745px');m.vp.height=450;m.vp.dispatch('resize');assert.equal(m.c.panelStyle.value.maxHeight,'295px');m.input.rect.top=330;m.input.rect.bottom=370;m.win.dispatch('scroll');assert.equal(m.c.panelStyle.value.transform,'translateY(-100%)')
+ const m=mount();m.c.search();await flush();assert.equal(m.c.panelStyle.value.maxHeight,'360px');m.vp.height=450;m.vp.dispatch('resize');assert.equal(m.c.panelStyle.value.maxHeight,'295px');m.input.rect.top=330;m.input.rect.bottom=370;m.win.dispatch('scroll');assert.equal(m.c.panelStyle.value.transform,'translateY(-100%)')
  m.input.visible=false;m.win.dispatch('scroll');assert.equal(m.c.opened.value,false);await flush();m.stop();for(const target of [m.win,m.doc,m.vp])assert([...target.listeners.values()].every(set=>set.size===0));assert(m.observers.every(observer=>observer.disconnected))
 })
 await test('clicking the still-focused input reopens after a single selection or Escape',async()=>{

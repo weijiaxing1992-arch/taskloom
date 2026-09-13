@@ -5,7 +5,7 @@ import { tagStyle } from './requirementFields'
 export type RequirementState = { id: number; key: string; name: string; color: string; category: 'todo'|'doing'|'done'|'cancelled'; enabled: boolean; sortOrder: number; system?: boolean }
 export type StatusOption = { value: string; label: string; color?: string; custom?: boolean }
 const tones: Record<string,string> = {
-  '草稿':'#64748B','规划中':'#059669','评审中':'#D97706','待开发':'#64748B',
+  '草稿':'#64748B','规划中':'#6366F1','评审中':'#D97706','待开发':'#64748B','进行中':'#2563EB',
   '开发中':'#2563EB','实现中':'#2563EB','修复中':'#2563EB','已确认':'#2563EB',
   '前端已完成':'#0891B2','后端已完成':'#0891B2','开发完成':'#0891B2',
   '后端完成 | 前端开发中':'#2563EB','前端完成 | 后端开发中':'#2563EB',
@@ -24,10 +24,16 @@ export function stateInfo(value: any, definitions: RequirementState[] = []) {
 export function statusLabel(value: any, definitions: RequirementState[], translate: (text:string)=>string): string { const info=stateInfo(value,definitions);return info.system&&info.name===info.key?translate(info.name):info.name }
 // 自定义状态名即使恰好等于某个中文系统词，也保持原文，不进行二次翻译。
 export function statusOptionLabel(option: StatusOption, translate: (text:string)=>string) { return option.custom?option.label:translate(option.label) }
-export function workflowStyle(value: any, definitions: RequirementState[] = []) { return tagStyle(stateInfo(value,definitions).color) }
+// 内置状态采用一致的展示语义，修正历史“规划中=完成绿色”的混淆。
+// 不改服务端快照、配置、分类或权限；显式自定义状态（即使同名）仍尊重配置。
+export function workflowColor(value: any, definitions: RequirementState[] = []): string {
+  const info = stateInfo(value, definitions)
+  return info.system && tones[info.key] ? tones[info.key]! : info.color
+}
+export function workflowStyle(value: any, definitions: RequirementState[] = []) { return tagStyle(workflowColor(value,definitions)) }
 export function workflowOptions(definitions: RequirementState[], observed: string[] = []): StatusOption[] {
   // 历史状态仍可显示/筛选，不因目录停用而抹去；可选过滤项不等于可迁移目标。
-  const values:StatusOption[] = [...definitions].sort((a,b)=>a.sortOrder-b.sortOrder||a.id-b.id).map(item=>({value:item.key,label:item.name,color:item.color,custom:!item.system||item.key!==item.name}))
+  const values:StatusOption[] = [...definitions].sort((a,b)=>a.sortOrder-b.sortOrder||a.id-b.id).map(item=>({value:item.key,label:item.name,color:workflowColor(item.key,definitions),custom:!item.system||item.key!==item.name}))
   for(const key of observed) if(key&&!values.some(item=>item.value===key)) values.push({value:key,label:key,color:tones[key]||'#64748B',custom:!tones[key]})
   return values
 }

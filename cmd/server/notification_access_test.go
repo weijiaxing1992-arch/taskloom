@@ -81,8 +81,7 @@ func TestReplyNotificationAdminTenantIsolationAndFailedPermissionQuery(t *testin
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "管理员跨项目") || strings.Contains(w.Body.String(), "其他租户不许读") {
 		t.Fatalf("admin tenant isolation wrong: %d %s", w.Code, w.Body.String())
 	}
-	b := *a
-	b.user = "u_admin"
+	b := administrationSessionFixture(t, a, "u_admin")
 	if _, err := a.db.Exec(`DROP TABLE project_members`); err != nil {
 		t.Fatal(err)
 	}

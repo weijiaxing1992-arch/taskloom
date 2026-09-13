@@ -171,7 +171,7 @@ async function syncRemote(record: DraftRecord) {
   if (!online() || !isCurrent(record.scope) || !canWrite.value || record.state === 'conflict' || remoteSyncing.value) return
   const token = sequence, scope = record.scope; remoteSyncing.value = true
   try {
-    const result = await api<any>(`/drafts/${encodeURIComponent(record.id)}`, { method: 'PUT', headers: { 'X-DevFlow-Project': session.value!.project.id }, body: JSON.stringify({ kind: record.kind, targetId: record.targetId, context: record.context, payload: record.payload, baseVersion: record.version }) })
+    const result = await api<any>(`/drafts/${encodeURIComponent(record.id)}`, { method: 'PUT', headers: { 'X-TaskLoom-Project': session.value!.project.id }, body: JSON.stringify({ kind: record.kind, targetId: record.targetId, context: record.context, payload: record.payload, baseVersion: record.version }) })
     if (!isCurrent(scope, token) || activeId.value !== record.id) return
     const detail = result?.draft || result || {}, version = Number(detail.version)
     if (!Number.isSafeInteger(version) || version < 1) throw new Error('私有草稿箱返回的数据不完整，请稍后刷新草稿箱确认')
@@ -215,7 +215,7 @@ async function mergeRemote() {
   const scope = scopeKey.value, token = sequence
   if (!canRead.value || !isCurrent(scope, token)) return
   try {
-    const result = await api<DraftListResponse>('/drafts', { headers: { 'X-DevFlow-Project': session.value!.project.id } })
+    const result = await api<DraftListResponse>('/drafts', { headers: { 'X-TaskLoom-Project': session.value!.project.id } })
     if (!isCurrent(scope, token) || !Array.isArray(result.items)) return
     scopeDraftCount.value = Math.max(scopeDraftCount.value, result.items.length)
     const localById = new Map(records.value.map(record => [record.id, record]))
@@ -248,7 +248,7 @@ async function ensurePayload(record: DraftRecord): Promise<DraftRecord | null> {
   if (record.hasPayload) return record
   const scope = scopeKey.value, token = sequence
   try {
-    const result = await api<DraftDetailResponse>(`/drafts/${encodeURIComponent(record.id)}`, { headers: { 'X-DevFlow-Project': session.value!.project.id } })
+    const result = await api<DraftDetailResponse>(`/drafts/${encodeURIComponent(record.id)}`, { headers: { 'X-TaskLoom-Project': session.value!.project.id } })
     if (!isCurrent(scope, token)) return null
     const detail: any = result.draft || result, loaded = normalRecord({ ...record, ...detail, id: record.id, kind: record.kind, state: 'synced', hasPayload: true }, scope)
     if (!loaded || !loaded.hasPayload) throw new Error('草稿内容数据不完整，无法恢复')
@@ -275,7 +275,7 @@ async function destroy(record: DraftRecord, completed = false) {
   resetMessages(); saving.value = true
   try {
     if (record.version > 0) {
-      const result = await api<any>(`/drafts/${encodeURIComponent(record.id)}`, { method: 'DELETE', headers: { 'X-DevFlow-Project': session.value!.project.id }, body: JSON.stringify({ version: record.version }) })
+      const result = await api<any>(`/drafts/${encodeURIComponent(record.id)}`, { method: 'DELETE', headers: { 'X-TaskLoom-Project': session.value!.project.id }, body: JSON.stringify({ version: record.version }) })
       if (result?.deleted !== true) throw new Error('私有草稿删除结果未确认，请刷新草稿箱核实')
     }
     await deleteLocal(record); removeRecord(record.id); scopeDraftCount.value = Math.max(0, scopeDraftCount.value - 1); pendingDeleteId.value = ''; message.value = t('草稿已删除')

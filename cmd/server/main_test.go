@@ -38,7 +38,7 @@ func TestSeedAndTenantScopedList(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("REQ-0001")) {
+	if !bytes.Contains(w.Body.Bytes(), []byte("000001")) {
 		t.Fatal("seed requirement missing")
 	}
 }

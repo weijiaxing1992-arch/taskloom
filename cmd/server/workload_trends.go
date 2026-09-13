@@ -56,10 +56,12 @@ type workloadTrendBucket struct {
 	acc   *workloadAccumulator
 }
 type workloadTrendCollector struct {
-	filters    WorkloadTrendFilters
-	directory  map[string]WorkloadPerson
-	monthly    map[string]*workloadTrendBucket
-	iterations map[string]*workloadTrendBucket
+	selectedIDs map[int64]bool
+	analysis    *iterationAnalysisCollector
+	filters     WorkloadTrendFilters
+	directory   map[string]WorkloadPerson
+	monthly     map[string]*workloadTrendBucket
+	iterations  map[string]*workloadTrendBucket
 }
 
 func newWorkloadTrendCollector(start, end time.Time, filters WorkloadTrendFilters) *workloadTrendCollector {
@@ -86,6 +88,9 @@ func (c *workloadTrendCollector) personMatches(id string) bool {
 	return ok && (c.filters.User == "" || id == c.filters.User) && (c.filters.Department == "*" || p.DepartmentID == c.filters.Department)
 }
 func (c *workloadTrendCollector) addRequirement(s workloadSprint, id int64, shipped bool, roles []workloadTrendRole) {
+	if c.analysis != nil {
+		c.analysis.add(s, id, shipped, roles)
+	}
 	// 职能/成员/部门共同过滤；仅选择部分参与人员时仍以原完整人数作分母，
 	// 不能把被过滤人员的份额重新分给可见人员，否则趋势与个人/企业月表不一致。
 	personFilter := c.filters.User != "" || c.filters.Department != "*"

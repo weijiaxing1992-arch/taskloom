@@ -22,10 +22,11 @@ var integrationReadScopes = []string{"requirements:read", "iterations:read", "de
 var integrationScopes = []map[string]string{
 	{"key": "requirements:read", "label": "读取需求"}, {"key": "iterations:read", "label": "读取迭代"},
 	{"key": "defects:read", "label": "读取缺陷"}, {"key": "test-cases:read", "label": "读取测试用例"},
+	{"key": "notifications:read", "label": "读取本人通知"},
 	{"key": "requirements:write", "label": "创建和更新需求"}, {"key": "iterations:write", "label": "创建和更新迭代"},
 	{"key": "defects:write", "label": "创建和更新缺陷"}, {"key": "test-cases:write", "label": "创建和更新测试用例"},
 	{"key": "comments:write", "label": "发布协作评论"}, {"key": "executions:read", "label": "读取测试执行"},
-	{"key": "executions:write", "label": "回写测试结果"},
+	{"key": "executions:write", "label": "回写测试结果"}, {"key": "release-notes:read", "label": "读取升级日志"},
 }
 
 type integrationCredential struct {
@@ -132,6 +133,20 @@ func (a *App) integrations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	canWrite := role != "" && role != "viewer"
+	var tenantAdmin int
+	if err = a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users u JOIN tenant_memberships tm ON tm.tenant_id=u.tenant_id AND tm.user_id=u.id WHERE u.tenant_id=? AND u.id=? AND u.active=1 AND u.operation_disabled=0 AND tm.status='active' AND tm.role='tenant_admin'`, tenantID, a.uid()).Scan(&tenantAdmin); err != nil {
+		fail(w, 503, "database_unavailable", "协作权限暂时无法读取")
+		return
+	}
+	availableScopes := integrationScopes
+	if tenantAdmin != 1 {
+		availableScopes = make([]map[string]string, 0, len(integrationScopes)-1)
+		for _, scope := range integrationScopes {
+			if scope["key"] != "release-notes:read" {
+				availableScopes = append(availableScopes, scope)
+			}
+		}
+	}
 	switch {
 	case r.URL.Path == "/api/integrations" && r.Method == http.MethodGet:
 		tokens, err := a.listIntegrationTokens(r)
@@ -139,7 +154,7 @@ func (a *App) integrations(w http.ResponseWriter, r *http.Request) {
 			fail(w, 503, "database_unavailable", "协作凭证暂时无法读取")
 			return
 		}
-		write(w, 200, map[string]any{"projectId": a.pid(), "userId": a.uid(), "tokens": tokens, "scopes": integrationScopes, "canWrite": canWrite, "canManage": true, "mcpPath": "/api/open/mcp", "apiPath": "/api/open/v1", "maxExpiryDays": 90})
+		write(w, 200, map[string]any{"projectId": a.pid(), "userId": a.uid(), "tokens": tokens, "scopes": availableScopes, "canWrite": canWrite, "canManage": true, "mcpPath": "/api/open/mcp", "apiPath": "/api/open/v1", "maxExpiryDays": 90})
 	case r.URL.Path == "/api/integrations/tokens" && r.Method == http.MethodPost:
 		a.createIntegrationToken(w, r, canWrite)
 	case strings.HasPrefix(r.URL.Path, "/api/integrations/tokens/") && r.Method == http.MethodDelete:
@@ -274,6 +289,10 @@ func (a *App) createIntegrationToken(w http.ResponseWriter, r *http.Request, can
 			fail(w, 403, "scope_forbidden", "只读成员不能创建写入凭证")
 			return
 		}
+		if scope == "release-notes:read" && currentRole != "tenant_admin" {
+			fail(w, 403, "scope_forbidden", "仅企业管理员可签发升级日志读取凭据")
+			return
+		}
 	}
 	if err := a.requireOperationAccess(r.Context(), tx); err != nil {
 		failOrganization(w, err)
@@ -371,7 +390,7 @@ func (a *App) integrationExternal(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if project := r.Header.Get("X-DevFlow-Project"); project != "" && project != scoped.pid() {
+	if project := r.Header.Get("X-TaskLoom-Project"); project != "" && project != scoped.pid() {
 		fail(w, 403, "project_forbidden", "凭证只允许访问绑定项目")
 		return
 	}
@@ -400,7 +419,7 @@ func (a *App) integrationBeginRequest(w http.ResponseWriter, r *http.Request, ke
 		fail(w, 429, "rate_limited", "请求过于频繁，请稍后重试")
 		return "", false
 	}
-	w.Header().Set("X-DevFlow-Request-Id", id)
+	w.Header().Set("X-TaskLoom-Request-Id", id)
 	return id, true
 }
 

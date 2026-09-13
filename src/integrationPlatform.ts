@@ -2,8 +2,9 @@
 export const contextReadScopes = ['requirements:read', 'iterations:read', 'defects:read', 'test-cases:read'] as const
 export const integrationScopeLabels: Record<string, string> = {
   'requirements:read': '读取需求', 'iterations:read': '读取迭代', 'defects:read': '读取缺陷', 'test-cases:read': '读取测试用例',
+  'notifications:read': '读取本人通知',
   'requirements:write': '写入需求', 'iterations:write': '写入迭代', 'defects:write': '写入缺陷', 'test-cases:write': '写入测试用例',
-  'comments:write': '添加评论', 'executions:read': '读取测试执行', 'executions:write': '记录测试执行',
+  'comments:write': '添加评论', 'executions:read': '读取测试执行', 'executions:write': '记录测试执行', 'release-notes:read': '读取升级日志',
 }
 export type IntegrationToken = { id: string; name: string; prefix: string; scopes: string[]; createdAt: string; expiresAt: string; lastUsedAt: string | null; revokedAt: string | null }
 export type IntegrationSnapshot = { projectId: string; userId: string; tokens: IntegrationToken[]; scopes: { key: string; label: string }[]; canWrite: boolean; canManage: boolean; mcpPath: string; apiPath: string; maxExpiryDays: number }

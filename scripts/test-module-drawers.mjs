@@ -30,7 +30,16 @@ const shades=node=>descendants(node,child=>typeof child.props?.class==='string'&
 
 await test('legacy views and the split testing submodules route every detail drawer through the reusable component',async()=>{
  const files=(await readdir(new URL('src/views/',root))).filter(file=>file.endsWith('.vue'))
- for(const file of files){const source=await read('src/views/'+file);assert(!/<(?:aside|div|section)[^>]*\bclass="(?:drawer|[^"\n]*\sdrawer)(?:\s|\")/.test(source),file+' contains an unconverted fixed drawer')}
+ for(const file of files){
+  let source=await read('src/views/'+file)
+  if(file==='Sprints.vue'){
+   // The iteration's explicit creation form is not a selected-record detail
+   // drawer. Exempt only its known Editor host, not other fixed drawers.
+   const creation=/<section class="drawer sprint-requirement-drawer" role="dialog" aria-modal="true" :aria-label="t\('创建需求'\)"><Editor ref="requirementComposer" embedded [^>]*@created="requirementCreated" @cancel="showRequirementComposer=false"\/><\/section>/
+   assert.match(source,creation);source=source.replace(creation,'')
+  }
+  assert(!/<(?:aside|div|section)[^>]*\bclass="(?:drawer|[^"\n]*\sdrawer)(?:\s|\")/.test(source),file+' contains an unconverted fixed drawer')
+ }
  for(const file of ['Defects','Projects'])assert.match(await read('src/views/'+file+'.vue'),/import ResizableDrawer from ['"]\.\.\/components\/ResizableDrawer\.vue['"]/)
  const sources=await Promise.all(['TestCaseLibrary','TestDesigns','TestingOperations'].map(name=>read('src/components/testing/'+name+'.vue')))
  for(const source of sources)assert.match(source,/import ResizableDrawer from ['"]\.\.\/ResizableDrawer\.vue['"]/)

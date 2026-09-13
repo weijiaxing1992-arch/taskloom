@@ -276,11 +276,11 @@ func (a *App) validateRequirementStateWrite(ctx context.Context, tx *sql.Tx, x *
 	if err != nil {
 		return "", err
 	}
-	role, err := a.requirementStateRole(ctx, tx)
+	roles, err := a.requirementStateRoles(ctx, tx)
 	if err != nil {
 		return "", err
 	}
-	if !validChoice(role, workflowRoleKeys()) {
+	if !rolesOverlap(roles, workflowRoleKeys()) {
 		return "", stateError{"forbidden", "当前角色仅可查看", 403}
 	}
 	if creating && x.Status == "" {
@@ -316,7 +316,7 @@ func (a *App) validateRequirementStateWrite(ctx context.Context, tx *sql.Tx, x *
 		return current, nil
 	}
 	for _, edge := range f.Transitions {
-		if edge.From == current && edge.To == x.Status && validChoice(role, edge.Roles) {
+		if edge.From == current && edge.To == x.Status && rolesOverlap(roles, edge.Roles) {
 			return current, nil
 		}
 	}
@@ -335,7 +335,7 @@ func (a *App) requirementAllowedTransitions(ctx context.Context, id int64) ([]st
 	if err = tx.QueryRowContext(ctx, `SELECT status FROM requirements WHERE tenant_id=? AND project_id=? AND id=?`, tenantID, a.pid(), id).Scan(&current); err != nil {
 		return nil, "", 0, err
 	}
-	role, err := a.requirementStateRole(ctx, tx)
+	roles, err := a.requirementStateRoles(ctx, tx)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -349,9 +349,9 @@ func (a *App) requirementAllowedTransitions(ctx context.Context, id int64) ([]st
 	}
 	states := requirementCategoryMap(items)
 	selected := map[string]bool{}
-	if validChoice(role, workflowRoleKeys()) {
+	if rolesOverlap(roles, workflowRoleKeys()) {
 		for _, edge := range f.Transitions {
-			if edge.From == current && states[edge.To].Enabled && validChoice(role, edge.Roles) {
+			if edge.From == current && states[edge.To].Enabled && rolesOverlap(roles, edge.Roles) {
 				selected[edge.To] = true
 			}
 		}

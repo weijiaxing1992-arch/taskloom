@@ -112,6 +112,15 @@ type workloadSprint struct {
 	selected           bool
 }
 
+// workloadProjectScope is an explicit, server-derived project allow-list for
+// personal and team reports. A nil scope is reserved for the existing
+// organization-wide report, which is separately protected by reports.view.
+// An empty non-nil scope deliberately matches no projects instead of falling
+// back to the organization, so a revoked membership can never widen a report.
+type workloadProjectScope struct {
+	ProjectIDs []string
+}
+
 var workloadMonthPattern = regexp.MustCompile(`^[0-9]{4}-(0[1-9]|1[0-2])$`)
 
 func workloadMonthRange(month string) (string, string, error) {
@@ -123,6 +132,38 @@ func workloadMonthRange(month string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid month")
 	}
 	return start.Format("2006-01-02"), start.AddDate(0, 1, 0).Format("2006-01-02"), nil
+}
+
+func normalizedWorkloadProjectScope(scope *workloadProjectScope) *workloadProjectScope {
+	if scope == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(scope.ProjectIDs))
+	for _, id := range scope.ProjectIDs {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return &workloadProjectScope{ProjectIDs: ids}
+}
+
+func workloadProjectFilter(scope *workloadProjectScope, column string) (string, []any) {
+	if scope == nil {
+		return "", nil
+	}
+	if len(scope.ProjectIDs) == 0 {
+		return " AND 1=0", nil
+	}
+	placeholders := make([]string, len(scope.ProjectIDs))
+	args := make([]any, len(scope.ProjectIDs))
+	for i, id := range scope.ProjectIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	return " AND " + column + " IN (" + strings.Join(placeholders, ",") + ")", args
 }
 
 // 此接口有意忽略当前项目选择，属于企业级统计，必须先验证真实 reports.view 企业授权。
@@ -165,6 +206,14 @@ func (a *App) workloadReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) monthlyWorkload(ctx context.Context, q stateStore, month, start, end string, collectors ...*workloadTrendCollector) (WorkloadReport, error) {
+	return a.monthlyWorkloadScoped(ctx, q, month, start, end, nil, collectors...)
+}
+
+func (a *App) monthlyWorkloadForProjects(ctx context.Context, q stateStore, month, start, end string, scope *workloadProjectScope, collectors ...*workloadTrendCollector) (WorkloadReport, error) {
+	return a.monthlyWorkloadScoped(ctx, q, month, start, end, normalizedWorkloadProjectScope(scope), collectors...)
+}
+
+func (a *App) monthlyWorkloadScoped(ctx context.Context, q stateStore, month, start, end string, scope *workloadProjectScope, collectors ...*workloadTrendCollector) (WorkloadReport, error) {
 	// 月表与趋势共用一次聚合读取；collector 只旁路收集相同口径，不能另建一套分摊规则。
 	var trend *workloadTrendCollector
 	if len(collectors) > 0 {
@@ -181,7 +230,8 @@ func (a *App) monthlyWorkload(ctx context.Context, q stateStore, month, start, e
 	sprints := map[string][]workloadSprint{}
 	aliases := map[string][]workloadSprint{}
 	projects := map[string]bool{}
-	rows, err := q.QueryContext(ctx, `SELECT s.id,s.project_id,s.name,s.end_date,p.name FROM sprints s JOIN projects p ON p.tenant_id=s.tenant_id AND p.id=s.project_id WHERE s.tenant_id=? AND p.status IN ('active','archived')`, tenantID)
+	projectClause, projectArgs := workloadProjectFilter(scope, "p.id")
+	rows, err := q.QueryContext(ctx, `SELECT s.id,s.project_id,s.name,s.end_date,p.name FROM sprints s JOIN projects p ON p.tenant_id=s.tenant_id AND p.id=s.project_id WHERE s.tenant_id=? AND p.status IN ('active','archived')`+projectClause, append([]any{tenantID}, projectArgs...)...)
 	if err != nil {
 		return out, err
 	}
@@ -191,7 +241,7 @@ func (a *App) monthlyWorkload(ctx context.Context, q stateStore, month, start, e
 			rows.Close()
 			return out, err
 		}
-		if s.end >= start && s.end < end {
+		if s.end >= start && s.end < end && (trend == nil || trend.selectedIDs == nil || trend.selectedIDs[s.id]) {
 			date, e := time.Parse("2006-01-02", s.end)
 			if e != nil || date.Format("2006-01-02") != s.end {
 				rows.Close()
@@ -353,7 +403,7 @@ func (a *App) monthlyWorkload(ctx context.Context, q stateStore, month, start, e
 		}
 		return p.roles[key]
 	}
-	rows, err = q.QueryContext(ctx, `SELECT r.id,r.project_id,r.sprint,r.status,r.role_weights_json,COALESCE(rs.category,'') FROM requirements r JOIN projects p ON p.tenant_id=r.tenant_id AND p.id=r.project_id LEFT JOIN requirement_statuses rs ON rs.tenant_id=r.tenant_id AND rs.project_id=r.project_id AND rs.key=r.status WHERE r.tenant_id=? AND p.status IN ('active','archived')`, tenantID)
+	rows, err = q.QueryContext(ctx, `SELECT r.id,r.project_id,r.sprint,r.status,r.role_weights_json,COALESCE(rs.category,'') FROM requirements r JOIN projects p ON p.tenant_id=r.tenant_id AND p.id=r.project_id LEFT JOIN requirement_statuses rs ON rs.tenant_id=r.tenant_id AND rs.project_id=r.project_id AND rs.key=r.status WHERE r.tenant_id=? AND p.status IN ('active','archived')`+projectClause, append([]any{tenantID}, projectArgs...)...)
 	if err != nil {
 		return out, err
 	}
@@ -480,7 +530,7 @@ func (a *App) monthlyWorkload(ctx context.Context, q stateStore, month, start, e
 	if err != nil {
 		return out, err
 	}
-	rows, err = q.QueryContext(ctx, `SELECT d.id,d.project_id,d.sprint,d.assignee_user_id,d.discipline FROM defects d JOIN projects p ON p.tenant_id=d.tenant_id AND p.id=d.project_id WHERE d.tenant_id=? AND p.status IN ('active','archived')`, tenantID)
+	rows, err = q.QueryContext(ctx, `SELECT d.id,d.project_id,d.sprint,d.assignee_user_id,d.discipline FROM defects d JOIN projects p ON p.tenant_id=d.tenant_id AND p.id=d.project_id WHERE d.tenant_id=? AND p.status IN ('active','archived')`+projectClause, append([]any{tenantID}, projectArgs...)...)
 	// 缺陷按处理人稳定 ID 和职能计数，不计需求难度；未知职能进入 other，未分配单列。
 	if err != nil {
 		return out, err

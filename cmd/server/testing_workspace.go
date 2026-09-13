@@ -1438,7 +1438,11 @@ func (a *App) testingReviewPermission(ctx context.Context, q stateStore) (bool, 
 	var tenantAdmin bool
 	var role string
 	err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM tenant_memberships tm WHERE tm.tenant_id=? AND tm.user_id=? AND tm.status='active' AND tm.role='tenant_admin'),COALESCE((SELECT role FROM project_members WHERE tenant_id=? AND project_id=? AND user_id=?),'')`, tenantID, a.uid(), tenantID, a.pid(), a.uid()).Scan(&tenantAdmin, &role)
-	return tenantAdmin || role == "project_admin" || role == "qa", err
+	if err != nil {
+		return false, err
+	}
+	roles, err := memberProjectRoles(ctx, q, a.pid(), a.uid())
+	return tenantAdmin || rolesOverlap(roles, []string{"project_admin", "qa"}), err
 }
 
 func (a *App) testingCurrentReviewState(ctx context.Context, q stateStore, id int64, fallback string) (string, error) {

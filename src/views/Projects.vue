@@ -146,7 +146,7 @@ async function openRecent(item: any) {
   navigating.value = true
   error.value = ''
   try {
-    await request(`/projects/${encodeURIComponent(projectID)}/visit`, { method: 'POST', headers: { 'X-DevFlow-Project': projectID } })
+    await request(`/projects/${encodeURIComponent(projectID)}/visit`, { method: 'POST', headers: { 'X-TaskLoom-Project': projectID } })
     localStorage.setItem('devflow-project', projectID)
     location.href = target
   } catch (cause) {
@@ -166,7 +166,7 @@ async function enter(project: any) {
   navigating.value = true
   error.value = ''
   try {
-    await request(`/projects/${encodeURIComponent(project.id)}/visit`, { method: 'POST', headers: { 'X-DevFlow-Project': project.id } })
+    await request(`/projects/${encodeURIComponent(project.id)}/visit`, { method: 'POST', headers: { 'X-TaskLoom-Project': project.id } })
     localStorage.setItem('devflow-project', project.id)
     location.href = '/requirements'
   } catch (cause) {
@@ -254,7 +254,7 @@ onBeforeUnmount(() => { disposed = true; loadVersion++; recentLoadVersion++; con
       <div v-else class="recent-empty"><b>{{ t('暂时没有最近内容') }}</b><p>{{ t('创建、更新或进入项目后，相关内容会出现在这里。') }}</p></div>
     </section>
 
-    <div v-if="show" class="modal-shade" @click.self="!saving && (show = false)"><div class="modal">
+    <div v-if="show" class="modal-shade slide-panel-shade" @click.self="!saving && (show = false)"><div class="modal">
       <header><h2>{{ t("创建项目") }}</h2><button :disabled="saving" @click="show = false" :aria-label="t('关闭')">×</button></header>
       <div class="modal-body form-grid"><label>{{ t("项目名称 *") }}</label><input :aria-label="t('项目名称 *')" v-model="form.name"><label>{{ t("项目代号 *") }}</label><input :aria-label="t('项目代号 *')" v-model="form.code" maxlength="12" :placeholder="t('例如 CORE')"><label>{{ t("项目描述") }}</label><textarea :aria-label="t('项目描述')" v-model="form.description"></textarea><label>{{ t("图标文字") }}</label><input :aria-label="t('图标文字')" v-model="form.icon" maxlength="1"><label>{{ t("主题色") }}</label><input :aria-label="t('主题色')" v-model="form.color" type="color"><p v-if="error" class="field-error">{{ t(error) }}</p></div>
       <footer><button class="btn" :disabled="saving" @click="show = false">{{ t("取消") }}</button><button class="btn primary" :disabled="saving" @click="create">{{ t(saving ? '创建中…' : '创建项目') }}</button></footer>

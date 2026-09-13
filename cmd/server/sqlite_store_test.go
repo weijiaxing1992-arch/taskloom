@@ -48,7 +48,7 @@ func fileSQLiteLogin(t *testing.T, a *App) *http.Cookie {
 
 func fileSQLiteRead(ctx context.Context, handler http.Handler, cookie *http.Cookie, path string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx)
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
@@ -216,7 +216,7 @@ func TestSQLiteInfrastructureFailuresAreNotAuthenticationOrPermissionDenials(t *
 	}
 	r := httptest.NewRequest(http.MethodGet, "/api/session", nil)
 	r.AddCookie(cookie)
-	r.Header.Set("X-DevFlow-Project", "not-an-accessible-project")
+	r.Header.Set("X-TaskLoom-Project", "not-an-accessible-project")
 	w := httptest.NewRecorder()
 	a.scopedAPI().ServeHTTP(w, r)
 	if w.Code != http.StatusForbidden {

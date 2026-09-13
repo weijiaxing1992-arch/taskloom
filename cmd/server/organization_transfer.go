@@ -111,11 +111,11 @@ func resolveOrganizationImportRow(ctx context.Context, store stateStore, row org
 	if err != nil {
 		add("email", err.Error())
 	} else {
-		var n int
-		if err = store.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE tenant_id=? AND lower(email)=?`, tenantID, email).Scan(&n); err != nil {
+		var inUse bool
+		if inUse, err = organizationEmailInUse(ctx, store, email, ""); err != nil {
 			return organizationMemberPatch{}, nil, err
 		}
-		if n > 0 {
+		if inUse {
 			add("email", "邮箱或成员已存在")
 		}
 	}
@@ -134,6 +134,7 @@ func resolveOrganizationImportRow(ctx context.Context, store stateStore, row org
 		}
 	}
 	projects := []organizationProjectMembership{}
+	projectRoles, roleErr := normalizedProjectRoles(strings.Split(row.ProjectRole, "|"), "")
 	if row.ProjectCode != "" {
 		var id string
 		err = store.QueryRowContext(ctx, `SELECT id FROM projects WHERE tenant_id=? AND lower(code)=lower(?) AND status='active'`, tenantID, row.ProjectCode).Scan(&id)
@@ -142,12 +143,12 @@ func resolveOrganizationImportRow(ctx context.Context, store stateStore, row org
 		} else if err != nil {
 			return organizationMemberPatch{}, nil, err
 		} else {
-			projects = append(projects, organizationProjectMembership{id, row.ProjectRole})
+			projects = append(projects, organizationProjectMembership{ProjectID: id, Role: row.ProjectRole, Roles: projectRoles})
 		}
 	} else if row.ProjectRole != "viewer" {
 		add("projectCode", "指定项目角色时必须提供项目编码")
 	}
-	if !validProjectRole(row.ProjectRole) || row.ProjectRole == "project_admin" {
+	if roleErr != nil || rolesOverlap(projectRoles, []string{"project_admin", "tenant_admin"}) {
 		add("projectRole", "CSV 仅可分配普通项目角色")
 	}
 	active := false
@@ -371,7 +372,11 @@ func (a *App) organizationExport(w http.ResponseWriter, r *http.Request) {
 			active = "true"
 		}
 		for _, p := range projects {
-			record := []string{m.Name, m.Email, m.EmployeeNo, codes[m.PrimaryDepartmentID], projectCodes[p.ProjectID], p.Role, active}
+			roles := p.Role
+			if len(p.Roles) > 0 {
+				roles = strings.Join(p.Roles, "|")
+			}
+			record := []string{m.Name, m.Email, m.EmployeeNo, codes[m.PrimaryDepartmentID], projectCodes[p.ProjectID], roles, active}
 			for i := range record {
 				record[i] = organizationCSVCell(record[i])
 			}

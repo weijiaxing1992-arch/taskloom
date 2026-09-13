@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "title_preserves_scope",
+  "model": "handwritten-reference-not-a-model-run",
+  "promptVersion": "grounded-preview-v2",
+  "output": {"title": "客户列表新增状态筛选", "insufficient": false}
+}

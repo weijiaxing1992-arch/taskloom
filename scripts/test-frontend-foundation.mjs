@@ -5,7 +5,7 @@ import ts from 'typescript'
 import * as Vue from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { parse, compileStyle } from 'vue/compiler-sfc'
-import { createServer } from 'vite'
+import { createServer, loadConfigFromFile } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { createWorkspaceHarness } from './helpers/workspace-harness.mjs'
 
@@ -55,9 +55,9 @@ await test('Vue and the foundation dependencies are real, exact installed releas
 })
 await test('notification badge synchronizes promptly and the redundant language decoration stays absent', () => {
   const appSource = read('src/App.vue'), notificationsSource = read('src/views/Notifications.vue'), localeSource = read('src/components/LocaleSwitcher.vue')
-  assert.match(appSource, /const unreadRefreshInterval = 3_000/)
+  assert.match(appSource, /const unreadRefreshInterval = 10_000/)
   assert.match(appSource, /addEventListener\('devflow-notifications-changed', refreshUnread\)/)
-  assert.match(notificationsSource, /const notificationRefreshInterval = 3_000/)
+  assert.match(notificationsSource, /const notificationRefreshInterval = 10_000/)
   assert.match(notificationsSource, /addEventListener\('devflow-notifications-changed', refreshVisible\)/)
   assert.doesNotMatch(localeSource, /aria-hidden="true">◎/)
 })
@@ -103,6 +103,16 @@ await test('a real 401 clears private context, and stale pre-conflict requests c
   let failure; const m = appHarness({ handler: async path => { if (failure) throw failure; return path === '/session' ? session() : { items: [] } } }); await m.load(); failure = new APIError('Expired', 401); await m.load(); assert.equal(m.workspace.session, null); assert.equal(m.workspace.authError, ''); m.stop()
   const late = deferred(), pending = appHarness({ handler: () => late.promise }), load = pending.load(); pending.identityChanged({ detail: 'identity_changed' }); late.resolve(session()); assert.equal(await load, false); assert.equal(pending.workspace.identityConflict, true); assert.equal(pending.workspace.session, null); pending.stop()
 })
+await test('a late business 401 rechecks a refreshed valid session once without replaying the write or asking for a password',async()=>{
+  const m=appHarness();await m.load();const before=m.calls.length
+  m.authExpired({detail:{path:'/requirements/7'}});assert.equal(m.workspace.session,null);assert.equal(m.workspace.authChecking,true);await flush()
+  assert.equal(m.workspace.currentUser.id,'a');assert.equal(m.calls.slice(before).filter(call=>call.path==='/session').length,1);assert(m.calls.slice(before).every(call=>!call.options?.method));assert(!m.calls.some(call=>call.path==='/auth/login'))
+  const restored=m.calls.length;m.authExpired();await flush();assert.equal(m.calls.length,restored);assert.equal(m.workspace.session,null);m.stop()
+})
+await test('a failed session recheck stops at the login boundary instead of recursively restoring an expired cookie',async()=>{
+  let m;m=appHarness({handler:async path=>{assert.equal(path,'/session');m.authExpired({detail:{path:'/session'}});throw new APIError('Expired',401)}})
+  m.authExpired({detail:{path:'/requirements/7'}});await flush();assert.equal(m.calls.length,1);assert.equal(m.workspace.session,null);assert.equal(m.workspace.authChecking,false);assert.equal(m.workspace.authRefreshing,false);m.stop()
+})
 await test('cancelled project guards keep both the persisted and verified scope unchanged', async () => {
   const m = appHarness(); await m.load(); const calls = m.calls.length; m.storage.set('devflow-project', 'project-a'); m.workspace.project = 'project-b'; m.win.addEventListener('devflow-before-project-change', event => event.preventDefault()); await m.switchProject()
   assert.equal(m.workspace.project, 'project-a'); assert.equal(m.workspace.currentProject.id, 'project-a'); assert.equal(m.storage.get('devflow-project'), 'project-a'); assert.equal(m.calls.length, calls); assert.equal(m.workspace.switchingProject, false); m.stop()
@@ -111,13 +121,13 @@ await test('project switching commits cache only after visit and rejects stale o
   const visit = deferred(), oldUnread = deferred(); let delayUnread = false
   const m = appHarness({ handler: async (path, options) => {
     if (path === '/session') return session()
-    if (path === '/projects/project-b/visit') { assert.equal(options?.headers?.['X-DevFlow-Project'], 'project-b'); return visit.promise }
+    if (path === '/projects/project-b/visit') { assert.equal(options?.headers?.['X-TaskLoom-Project'], 'project-b'); return visit.promise }
     if (path === '/notifications/unread-count') return delayUnread ? oldUnread.promise : { unread: 3 }
     return { items: [], unread: 3 }
   } })
   await m.load(); m.storage.set('devflow-project', 'project-a'); delayUnread = true
   const oldRequest = m.refreshUnread(); await flush()
-  assert.equal(m.calls.at(-1).options?.headers?.['X-DevFlow-Project'], 'project-a')
+  assert.equal(m.calls.at(-1).options?.headers?.['X-TaskLoom-Project'], 'project-a')
   m.workspace.project = 'project-b'
   const switching = m.switchProject(); await flush()
   assert.equal(m.workspace.switchingProject, true); assert.equal(m.storage.get('devflow-project'), 'project-a')
@@ -126,6 +136,25 @@ await test('project switching commits cache only after visit and rejects stale o
   visit.resolve({}); await switching
   assert.equal(m.storage.get('devflow-project'), 'project-b'); assert.equal(m.location.href, '/requirements'); m.stop()
 })
+await test('a late unread poll cannot overwrite the authoritative count from a read-state update', async () => {
+  const pending=deferred(); let delayed=false
+  const m=appHarness({handler:async path=>path==='/session'?session():path==='/notifications/unread-count'&&delayed?pending.promise:{items:[],unread:3}})
+  await m.load(); delayed=true
+  const old=m.refreshUnread(); await flush()
+  m.unreadChanged({detail:1}); assert.equal(m.workspace.unread,1)
+  pending.resolve({unread:3}); await old; assert.equal(m.workspace.unread,1)
+  delayed=false; const requestCount=m.calls.length; await m.refreshUnread(); assert.equal(m.workspace.unread,1); assert.equal(m.calls.length,requestCount)
+  await m.refreshUnread({type:'devflow-notifications-changed'}); assert.equal(m.workspace.unread,3)
+  m.authExpired(); m.unreadChanged({detail:99}); assert.equal(m.workspace.unread,0)
+  m.stop()
+})
+await test('same-user context reload also preserves a newer read-state event without crossing identities', async () => {
+  const pending=deferred(); let delayed=false
+  const m=appHarness({handler:async path=>path==='/session'?session():path==='/notifications/unread-count'&&delayed?pending.promise:{items:[],unread:3}})
+  await m.load(); delayed=true
+  const loading=m.load(); await flush(); m.unreadChanged({detail:0})
+  pending.resolve({unread:3}); await loading; assert.equal(m.workspace.unread,0); m.stop()
+})
 await test('manual project switches discard cross-project deep-link query before reloading the destination', async () => {
   const m = appHarness(); await m.load(); m.storage.set('devflow-project', 'project-a')
   m.route.query = { project: 'project-b', req: '44', create: 'case' }; m.route.fullPath = '/requirements?project=project-b&req=44&create=case'; m.workspace.project = 'project-b'
@@ -133,33 +162,33 @@ await test('manual project switches discard cross-project deep-link query before
   assert.deepEqual(m.route.query, {}); assert.equal(m.route.fullPath, '/requirements'); assert.equal(m.location.href, '/requirements'); assert.equal(m.storage.get('devflow-project'), 'project-b'); m.stop()
 })
 await test('notification project links validate accessible projects and commit only a verified target', async () => {
-  const target = deferred(), m = appHarness({ handler: async (path, options) => { const project = options?.headers?.['X-DevFlow-Project']; if (path === '/session') return project === 'project-b' ? target.promise : session(); return { items: [{ id: 'project-b', status: 'active' }], unread: 3 } } })
+  const target = deferred(), m = appHarness({ handler: async (path, options) => { const project = options?.headers?.['X-TaskLoom-Project']; if (path === '/session') return project === 'project-b' ? target.promise : session(); return { items: [{ id: 'project-b', status: 'active' }], unread: 3 } } })
   m.route.query.project = 'project-b'; m.storage.set('devflow-project', 'project-a'); const loading = m.load(); await flush(); assert.equal(m.storage.get('devflow-project'), 'project-a'); assert.equal(m.workspace.session, null)
   target.resolve(session('a', 'project-b')); assert.equal(await loading, true); assert.equal(m.workspace.currentProject.id, 'project-b'); assert.equal(m.storage.get('devflow-project'), 'project-b')
-  assert.equal(m.calls.filter(call => call.options?.headers?.['X-DevFlow-Project'] === 'project-b').length, 4); m.stop()
+  assert.equal(m.calls.filter(call => call.options?.headers?.['X-TaskLoom-Project'] === 'project-b').length, 4); m.stop()
 })
 await test('inaccessible or unavailable notification targets never change the original project', async () => {
   for (const accessible of [false, true]) {
-    const m = appHarness({ handler: async (path, options) => { if (options?.headers?.['X-DevFlow-Project']) throw new APIError('Offline', 503); return path === '/session' ? session() : { items: accessible ? [{ id: 'project-b', status: 'active' }] : [], unread: 3 } } })
+    const m = appHarness({ handler: async (path, options) => { if (options?.headers?.['X-TaskLoom-Project']) throw new APIError('Offline', 503); return path === '/session' ? session() : { items: accessible ? [{ id: 'project-b', status: 'active' }] : [], unread: 3 } } })
     m.route.query.project = 'project-b'; m.storage.set('devflow-project', 'project-a'); m.workspace.acceptContext({ session: session(), projects: [], unread: 2 }); assert.equal(await m.load(), false)
-    assert.equal(m.storage.get('devflow-project'), 'project-a'); assert.equal(m.workspace.currentProject.id, 'project-a'); assert(m.workspace.authError); assert.equal(m.calls.filter(call => call.options?.headers?.['X-DevFlow-Project']).length, accessible ? 1 : 0); m.stop()
+    assert.equal(m.storage.get('devflow-project'), 'project-a'); assert.equal(m.workspace.currentProject.id, 'project-a'); assert(m.workspace.authError); assert.equal(m.calls.filter(call => call.options?.headers?.['X-TaskLoom-Project']).length, accessible ? 1 : 0); m.stop()
   }
 })
 await test('login retries preserve the initial notification project but later query changes never auto-switch scope', async () => {
   let loggedIn = false
-  const m = appHarness({ handler: async (path, options) => { if (!loggedIn) throw new APIError('Login', 401); return path === '/session' ? session('a', options?.headers?.['X-DevFlow-Project'] || 'project-a') : { items: [{ id: 'project-b', status: 'active' }], unread: 0 } } })
+  const m = appHarness({ handler: async (path, options) => { if (!loggedIn) throw new APIError('Login', 401); return path === '/session' ? session('a', options?.headers?.['X-TaskLoom-Project'] || 'project-a') : { items: [{ id: 'project-b', status: 'active' }], unread: 0 } } })
   m.route.query.project = 'project-b'; await m.load(); assert.equal(m.workspace.session, null); loggedIn = true; assert.equal(await m.load(), true); assert.equal(m.workspace.currentProject.id, 'project-b')
-  m.route.query.project = 'arbitrary-new-query'; const before = m.calls.length; await m.load(); assert.equal(m.calls.length - before, 4); assert(m.calls.slice(before).every(call => !call.options?.headers?.['X-DevFlow-Project'])); m.stop()
+  m.route.query.project = 'arbitrary-new-query'; const before = m.calls.length; await m.load(); assert.equal(m.calls.length - before, 4); assert(m.calls.slice(before).every(call => !call.options?.headers?.['X-TaskLoom-Project'])); m.stop()
 })
 await test('delegated report and organization navigation is derived from verified grants, never a project-admin role', () => {
-  const m = createWorkspaceHarness(), context = session('a', 'project-a', 'project_admin'); m.workspace.acceptContext({ session: context, projects: [], unread: 0 }); assert(m.workspace.canManageProject); assert.equal(m.workspace.canViewReports, false); assert.equal(m.workspace.canOpenOrganization, false)
-  m.workspace.acceptContext({ session: { ...context, organizationPermissions: ['reports.view', 'organization.read'] }, projects: [], unread: 0 }); assert(m.workspace.canViewReports); assert(m.workspace.canOpenOrganization); m.workspace.markIdentityConflict(false, 'Changed'); assert.equal(m.workspace.canViewReports, false); m.stop()
+  const m = createWorkspaceHarness(), context = session('a', 'project-a', 'project_admin'); m.workspace.acceptContext({ session: context, projects: [], unread: 0 }); assert(m.workspace.canManageProject); assert(m.workspace.canAccessWorkload); assert.equal(m.workspace.canViewReports, false); assert.equal(m.workspace.canOpenOrganization, false)
+  m.workspace.acceptContext({ session: { ...context, organizationPermissions: ['reports.view', 'organization.read'] }, projects: [], unread: 0 }); assert(m.workspace.canViewReports); assert(m.workspace.canOpenOrganization); m.workspace.markIdentityConflict(false, 'Changed'); assert.equal(m.workspace.canViewReports, false); assert.equal(m.workspace.canAccessWorkload, false); m.stop()
 })
 await test('disabled account loads only its session, retains cached project and exposes no privileged capabilities',async()=>{
  const account={...session('a',''),canImpersonate:true,organizationPermissions:['reports.view','organization.read']};account.user.operationDisabled=true
  const m=appHarness({handler:async path=>{assert.equal(path,'/session');return account}});m.storage.set('devflow-project','cached-project');m.workspace.project='cached-project';m.route.query.project='forbidden-target';assert.equal(await m.load(),true)
  assert.deepEqual(m.calls.map(call=>call.path),['/session']);assert.equal(m.workspace.currentUser.id,'a');assert.equal(m.workspace.project,'cached-project');assert.equal(m.storage.get('devflow-project'),'cached-project');assert.deepEqual(m.workspace.projects,[]);assert.equal(m.workspace.unread,0)
- for(const key of ['canManageProject','canManageOrganization','canOpenOrganization','canViewReports'])assert.equal(m.workspace[key],false,key)
+ for(const key of ['canManageProject','canManageOrganization','canOpenOrganization','canViewReports','canAccessWorkload'])assert.equal(m.workspace[key],false,key)
  await m.refreshUnread();assert.equal(m.calls.length,1);m.stop()
 })
 await test('projectless administrator can open archived-project management without reading a scoped inbox', async () => {
@@ -176,22 +205,22 @@ await test('projectless administrator can open archived-project management witho
 await test('management pages recover archived cached projects only after an active target session is verified', async () => {
   for (const page of ['/projects', '/organization/members']) {
     const target = deferred(), m = appHarness({ handler: async (path, options) => {
-      const selected = options?.headers?.['X-DevFlow-Project']
+      const selected = options?.headers?.['X-TaskLoom-Project']
       if (path === '/session') { if (selected === 'active-p') return target.promise; throw new APIError('Archived project', 403, 'project_forbidden') }
       if (path === '/projects') return { items: [{ id: 'archived-p', status: 'archived' }, { id: 'deleted-p', status: 'deleted' }, { id: 'active-p', status: 'active' }] }
       return path === '/notifications/unread-count' ? { unread: 4 } : {}
     } })
     m.route.path = page; m.storage.set('devflow-project', 'archived-p'); m.workspace.project = 'archived-p'
     const loading = m.load(); await flush(); assert.equal(m.storage.get('devflow-project'), 'archived-p'); assert.equal(m.workspace.session, null); assert.deepEqual(m.writes, [])
-    assert.deepEqual(m.calls.map(c => c.path), ['/session', '/projects', '/session']); assert.equal(m.calls[2].options.headers['X-DevFlow-Project'], 'active-p')
+    assert.deepEqual(m.calls.map(c => c.path), ['/session', '/projects', '/session']); assert.equal(m.calls[2].options.headers['X-TaskLoom-Project'], 'active-p')
     target.resolve(session('admin', 'active-p')); assert.equal(await loading, true); assert.equal(m.workspace.currentProject.id, 'active-p'); assert.equal(m.storage.get('devflow-project'), 'active-p'); assert.equal(m.workspace.unread, 4)
-    assert.deepEqual(m.writes, [{ key: 'devflow-project', value: 'active-p' }]); assert(m.calls.slice(2).every(c => c.options?.headers?.['X-DevFlow-Project'] === 'active-p')); m.stop()
+    assert.deepEqual(m.writes, [{ key: 'devflow-project', value: 'active-p' }]); assert(m.calls.slice(2).every(c => c.options?.headers?.['X-TaskLoom-Project'] === 'active-p')); m.stop()
   }
 })
 await test('management recovery does not rewrite cache on no active project, failed/mismatched verification, or explicit notification deep links', async () => {
   for (const scenario of ['no-active', 'unavailable', 'mismatch', 'notification-link']) {
     const m = appHarness({ handler: async (path, options) => {
-      const selected = options?.headers?.['X-DevFlow-Project']
+      const selected = options?.headers?.['X-TaskLoom-Project']
       if (path === '/session') {
         if (!selected) throw new APIError('Archived project', 403, 'project_forbidden')
         if (scenario === 'unavailable') throw new APIError('Offline', 503, 'database_unavailable')
@@ -249,11 +278,34 @@ await test('custom select menu CSS reaches the nested popover and gives long eve
 })
 
 // Vite 7 keeps its WebSocket transport separate from HMR; SSR tests need neither listener.
+const developmentConfig=await loadConfigFromFile({command:'serve',mode:'test'},root+'vite.config.ts',root,'silent',undefined,'runner')
+assert(developmentConfig,'the real Vite configuration must load')
 const server = await createServer({ configFile: false, root, plugins: [vue()], resolve: { alias: { '@': root + 'src' } }, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom' })
 try {
   assert.equal(server.httpServer, null)
   assert.equal(server.config.server.hmr, false)
   assert.equal(server.config.server.ws, false)
+  await test('development scans only the application entry and ignores archives without excluding source HMR',async()=>{
+    const config=developmentConfig.config,ignored=config.server.watch.ignored
+    assert.deepEqual(config.optimizeDeps.entries,['index.html'])
+    assert.equal(typeof ignored,'function')
+    for(const path of ['work','work/old-build/web/index.html','outputs/report.html','交付文件夹/release/index.html','开源交付/TaskLoom/source/index.html','clients/devflow_macos/build/app','data/devflow.db','dist/assets/old.js','dist-developer/index.html','build/index.html','archives/old/index.html','backups/snapshot.json','release/index.html','cmd/server/assets/index.html','snapshot.db','snapshot.db-wal','snapshot.sqlite3-shm','snapshot.sqlite-journal','release.tar.gz','backup.zip','installer.dmg'])assert.equal(ignored(root+path),true,'must ignore '+path)
+    for(const path of ['', 'index.html','src','src/main.ts','src/App.vue','src/views/Requirements.vue','src/components/RequirementHistory.vue','src/tailwind.css','src/work/helper.ts','src/assets/icon.svg','scripts/theme-palette.mjs','portal/web-public/portal/index.html'])assert.equal(ignored(root+path),false,'must preserve '+path)
+    assert.notEqual(config.server.hmr,false,'application HMR must remain enabled')
+    assert.notEqual(config.server.watch,null,'source watcher must remain enabled')
+    const html=await server.transformIndexHtml('/requirements',read('index.html'))
+    assert.match(html,/src="\/@vite\/client"/)
+    // Vite extracts the real inline bootstrap into an HTML proxy module.
+    const bootstrap=html.match(/src="([^"]+\?html-proxy&index=0\.js)"/)?.[1]
+    assert(bootstrap,'the browser must receive its inline bootstrap module')
+    const inlineEntry=await server.transformRequest(bootstrap.replace('/@id/__x00__','\0'))
+    assert.match(inlineEntry?.code||'',/import\(['"]\/src\/main\.ts['"]\)/)
+    const entry=await server.transformRequest('/src/main.ts')
+    assert(entry?.code,'Vite must transform the real browser entry')
+    assert.match(entry.code,/createApp\(/);assert.match(entry.code,/import\.meta\.hot/)
+    const app=await server.transformRequest('/src/App.vue')
+    assert(app?.code,'Vite must compile the source Vue application');assert.match(app.code,/_sfc_main|defineComponent/)
+  })
   await test('real shadcn/Reka Button defaults to a non-submitting native button and supports explicit submit', async () => {
     const { default: Button } = await server.ssrLoadModule('/src/components/ui/button/Button.vue')
     const ordinary = await renderToString(Vue.createSSRApp({ render: () => Vue.h(Button, { variant: 'outline', disabled: true }, () => 'Open') }))

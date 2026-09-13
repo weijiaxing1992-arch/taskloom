@@ -9,7 +9,7 @@ import (
 )
 
 func integrationMCPTestScopes(write bool) []string {
-	result := []string{"requirements:read", "iterations:read", "defects:read", "test-cases:read", "executions:read"}
+	result := []string{"requirements:read", "iterations:read", "defects:read", "test-cases:read", "executions:read", "notifications:read", "release-notes:read"}
 	if write {
 		result = append(result, "requirements:write", "iterations:write", "defects:write", "test-cases:write", "executions:write", "comments:write")
 	}
@@ -22,7 +22,7 @@ func integrationMCPTestCall(t *testing.T, payload string, scopes []string, dispa
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Accept", "application/json, text/event-stream")
 	r.Header.Set("Authorization", "Bearer test-only-credential")
-	r.Header.Set("X-DevFlow-User", "untrusted-client-selector")
+	r.Header.Set("X-TaskLoom-User", "untrusted-client-selector")
 	r.Header.Set("Cookie", "untrusted=client-cookie")
 	w := httptest.NewRecorder()
 	serveIntegrationMCP(w, r, dispatch, scopes)
@@ -180,7 +180,7 @@ func TestIntegrationMCPForwardsOnlyBoundedRequestsAndReturnsETag(t *testing.T) {
 		if r.Method != http.MethodPatch || r.URL.Path != "/api/open/v1/requirements/42" || r.URL.Host != "" || r.URL.Scheme != "" {
 			t.Fatalf("Unexpected target: %s %s", r.Method, r.URL)
 		}
-		if r.Header.Get("If-Match") != `"revision-7"` || r.Header.Get("Idempotency-Key") != "change-123" || r.Header.Get("Authorization") != "Bearer test-only-credential" || r.Header.Get("X-DevFlow-User") != "" || r.Header.Get("Cookie") != "" {
+		if r.Header.Get("If-Match") != `"revision-7"` || r.Header.Get("Idempotency-Key") != "change-123" || r.Header.Get("Authorization") != "Bearer test-only-credential" || r.Header.Get("X-TaskLoom-User") != "" || r.Header.Get("Cookie") != "" {
 			t.Fatalf("Unsafe or missing forwarded headers: %#v", r.Header)
 		}
 		var payload map[string]any
@@ -212,6 +212,10 @@ func TestIntegrationMCPReadQueriesAndComments(t *testing.T) {
 		{"devflow_requirements_transitions", `{"id":4}`, "GET", "/api/open/v1/requirements/4/transitions", ""},
 		{"devflow_requirements_test_cases", `{"id":4,"query":{"page":2}}`, "GET", "/api/open/v1/requirements/4/test-cases", "page=2"},
 		{"devflow_defects_comments", `{"id":3}`, "GET", "/api/open/v1/defects/3/comments", ""},
+		{"devflow_notifications_list", `{"query":{"read":"unread","group":"mentions","q":"待确认"}}`, "GET", "/api/open/v1/notifications", "group=mentions&q=%E5%BE%85%E7%A1%AE%E8%AE%A4&read=unread"},
+		{"devflow_notifications_get", `{"id":9}`, "GET", "/api/open/v1/notifications/9", ""},
+		{"devflow_release_notes_list", `{"query":{"q":"V1.1","page":2}}`, "GET", "/api/open/v1/release-notes", "page=2&q=V1.1"},
+		{"devflow_release_notes_get", `{"id":8}`, "GET", "/api/open/v1/release-notes/8", ""},
 		{"devflow_test_cases_create", `{"data":{"title":"T","requirementId":null},"idempotencyKey":"create-123"}`, "POST", "/api/open/v1/test-cases", ""},
 		{"devflow_requirements_comment", `{"id":4,"body":"已验证","mentionUserIds":["u_member"],"idempotencyKey":"comment-123"}`, "POST", "/api/open/v1/requirements/4/comments", ""},
 	}
@@ -291,7 +295,7 @@ func TestIntegrationOpenAPICoversBoundedInterface(t *testing.T) {
 		t.Fatal("Missing OpenAPI 3.1 declaration")
 	}
 	paths := spec["paths"].(map[string]any)
-	for _, path := range []string{"/me", "/context", "/metadata", "/openapi", "/requirements", "/iterations", "/defects", "/test-cases", "/executions", "/requirements/{id}/comments", "/requirements/{id}/transitions", "/requirements/{id}/test-cases"} {
+	for _, path := range []string{"/me", "/context", "/metadata", "/openapi", "/requirements", "/iterations", "/defects", "/test-cases", "/executions", "/notifications", "/notifications/{id}", "/release-notes", "/release-notes/{sprintId}", "/requirements/{id}/comments", "/requirements/{id}/transitions", "/requirements/{id}/test-cases"} {
 		if paths[path] == nil {
 			t.Fatalf("Missing documented path %s", path)
 		}

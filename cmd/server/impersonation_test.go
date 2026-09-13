@@ -11,7 +11,7 @@ import (
 func impersonationRequest(a *App, cookie *http.Cookie, method, path, body, project string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-DevFlow-Project", project)
+	r.Header.Set("X-TaskLoom-Project", project)
 	if cookie != nil {
 		r.AddCookie(cookie)
 	}
@@ -56,8 +56,8 @@ func TestImpersonationPermissionAndAudit(t *testing.T) {
 	// Another tab's prior identity cannot accidentally perform member writes.
 	r := httptest.NewRequest("POST", "/api/requirements", strings.NewReader(`{"title":"must not exist"}`))
 	r.AddCookie(admin)
-	r.Header.Set("X-DevFlow-Expected-User", "u_admin")
-	r.Header.Set("X-DevFlow-Project", projectID)
+	r.Header.Set("X-TaskLoom-Expected-User", "u_admin")
+	r.Header.Set("X-TaskLoom-Project", projectID)
 	w = httptest.NewRecorder()
 	a.scopedAPI().ServeHTTP(w, r)
 	if w.Code != 409 || !strings.Contains(w.Body.String(), "identity_changed") {
@@ -74,6 +74,76 @@ func TestImpersonationPermissionAndAudit(t *testing.T) {
 	a.db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE action IN ('impersonation_started','impersonation_stopped') AND actor_id='u_admin' AND object_id='u_member'`).Scan(&count)
 	if count != 2 {
 		t.Fatalf("start/stop audit=%d", count)
+	}
+}
+
+func TestImpersonationPendingInitialPasswordUsesReadOnlyReview(t *testing.T) {
+	a := testApp(t)
+	forceInitialPassword(t, a, "u_member")
+	_, admin := loginRequest(a, "linxia@devflow.local", seedPassword)
+
+	// The administrator can select another project, but u_member cannot. The
+	// review must persist the verified target project rather than the stale
+	// browser header so the landing page is immediately usable.
+	w := impersonationRequest(a, admin, http.MethodPost, "/api/auth/impersonation", `{"userId":"u_member","reason":"核查待改密账号可见范围"}`, insightProjectID)
+	started := jsonMap(t, w)
+	if w.Code != http.StatusOK || started["readOnly"] != true || started["projectId"] != projectID {
+		t.Fatalf("read-only review did not start safely: %d %s", w.Code, w.Body.String())
+	}
+	var storedProject string
+	var storedReadOnly bool
+	if err := a.db.QueryRow(`SELECT project_id,read_only FROM auth_impersonations WHERE tenant_id=? AND session_hash=(SELECT token_hash FROM auth_sessions WHERE user_id='u_admin' ORDER BY created_at DESC LIMIT 1)`, tenantID).Scan(&storedProject, &storedReadOnly); err != nil || storedProject != projectID || !storedReadOnly {
+		t.Fatalf("review context was not stored against the target project: project=%q readonly=%v err=%v", storedProject, storedReadOnly, err)
+	}
+	w = impersonationRequest(a, admin, http.MethodGet, "/api/session", "", projectID)
+	session := jsonMap(t, w)
+	user, userOK := session["user"].(map[string]any)
+	impersonation, impersonationOK := session["impersonation"].(map[string]any)
+	if !userOK || !impersonationOK {
+		t.Fatalf("pending-password review did not expose an effective review session: %d %s", w.Code, w.Body.String())
+	}
+	if w.Code != http.StatusOK || user["id"] != "u_member" || user["mustChangePassword"] != false || impersonation["readOnly"] != true {
+		t.Fatalf("pending-password review was sent to the first-password screen: %d %s", w.Code, w.Body.String())
+	}
+	if w = impersonationRequest(a, admin, http.MethodGet, "/api/requirements", "", projectID); w.Code != http.StatusOK {
+		t.Fatalf("read-only review cannot load target work: %d %s", w.Code, w.Body.String())
+	}
+	// Notifications may belong to another project. Opening one first records a
+	// visit, which is the sole non-read exception in review mode. It remains
+	// bound to the target member's project membership and is audited just like
+	// every other delegated request.
+	if w = impersonationRequest(a, admin, http.MethodPost, "/api/projects/"+projectID+"/visit", `{}`, projectID); w.Code != http.StatusOK {
+		t.Fatalf("read-only review cannot enter the target member's project: %d %s", w.Code, w.Body.String())
+	}
+	if w = impersonationRequest(a, admin, http.MethodPost, "/api/projects/"+insightProjectID+"/visit", `{}`, projectID); w.Code != http.StatusForbidden {
+		t.Fatalf("read-only review used administrator project access: %d %s", w.Code, w.Body.String())
+	}
+
+	// No business mutation, notification state, or personal display preference
+	// can be changed in this mode. The router denies these before any handler
+	// sees their payload, including endpoints that are normally personal writes.
+	for _, request := range []struct{ method, path, body string }{
+		{http.MethodPost, "/api/requirements", `{"title":"must not be created"}`},
+		{http.MethodPatch, "/api/notifications/999999", `{"read":true}`},
+		{http.MethodPatch, "/api/preferences/display", `{"fontSize":"large"}`},
+	} {
+		w = impersonationRequest(a, admin, request.method, request.path, request.body, projectID)
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), `"impersonation_read_only"`) {
+			t.Fatalf("read-only review allowed %s: %d %s", request.path, w.Code, w.Body.String())
+		}
+	}
+	var actions int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM auth_impersonation_actions WHERE tenant_id=? AND admin_user_id='u_admin' AND target_user_id='u_member' AND status_code=403`, tenantID).Scan(&actions); err != nil || actions != 4 {
+		t.Fatalf("denied read-only writes lost dual-identity audit: count=%d err=%v", actions, err)
+	}
+	var stillRequired bool
+	if err := a.db.QueryRow(`SELECT must_change_password FROM users WHERE tenant_id=? AND id='u_member'`, tenantID).Scan(&stillRequired); err != nil || !stillRequired {
+		t.Fatalf("review changed the member credential boundary: required=%v err=%v", stillRequired, err)
+	}
+
+	w = impersonationRequest(a, admin, http.MethodPost, "/api/auth/impersonation/stop", `{}`, insightProjectID)
+	if w.Code != http.StatusOK || jsonMap(t, w)["projectId"] != projectID {
+		t.Fatalf("administrator could not return from read-only review: %d %s", w.Code, w.Body.String())
 	}
 }
 

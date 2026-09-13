@@ -9,6 +9,8 @@ const root=new URL('../',import.meta.url)
 const favoriteSource=await readFile(new URL('src/components/RequirementFavorite.vue',root),'utf8')
 const workSource=await readFile(new URL('src/views/MyWork.vue',root),'utf8')
 const transpile=source=>ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
+const workEfficiency={}
+new Function('exports',transpile(await readFile(new URL('src/myWorkEfficiency.ts',root),'utf8')))(workEfficiency)
 const defer=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject}}
 const settle=async()=>{await Promise.resolve();await Promise.resolve();await Vue.nextTick()}
 class Events{listeners=new Map();emitted=[];addEventListener(name,fn){if(!this.listeners.has(name))this.listeners.set(name,new Set());this.listeners.get(name).add(fn)}removeEventListener(name,fn){this.listeners.get(name)?.delete(fn)}dispatchEvent(event){this.emitted.push(event);for(const fn of [...(this.listeners.get(event.type)||[])])fn(event)}}
@@ -20,6 +22,8 @@ function mount(source,handler=async()=>({items:[],counts:{}}),props={}){
  const imports={'../components/RequirementCode.vue':{default:RequirementCodeStub},'../requirementWorkflow':workflow,vue:{...Vue,onMounted:fn=>mounted.push(fn),onBeforeUnmount:fn=>unmounts.push(fn)},'../api':{api:async(path,options)=>{calls.push({path,options});return handler(path,options)}},'../i18n':{t:value=>language.value==='en-US'?`en:${value}`:value,locale:language,formatDate:value=>String(value)},'vue-router':{useRouter:()=>({push:async path=>{navigations.push(path)}})}}
  imports['../components/RequirementListExport.vue']={default:Vue.defineComponent({name:'RequirementListExport',props:['items','projectId','columns'],setup:()=>()=>Vue.h('button',{type:'button'},'Export')})}
  imports['../components/Icon.vue']={default:Vue.defineComponent({name:'Icon',props:['name'],setup:()=>()=>Vue.h('svg',{'aria-hidden':'true'})})}
+ imports['../myWorkEfficiency']=workEfficiency
+ imports['../layoutScope']={layoutScope:Vue.ref('tenant:user')}
  const module={};new Function('require','exports','localStorage','window','location','CustomEvent',transpile(compiled.content))(id=>imports[id],module,{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value))},win,location,Event)
  const reactiveProps=Vue.reactive(props),state=scope.run(()=>module.default.setup(reactiveProps,{expose:()=>{},emit:(...args)=>emitted.push(args)}))
  return{...state,props:reactiveProps,calls,emitted,navigations,win,storage,location,language,mount:async()=>{for(const fn of mounted)await fn();await settle()},stop:()=>{for(const fn of unmounts)fn();scope.stop()}}
@@ -29,7 +33,7 @@ let count=0
 async function test(name,run){await run();count++;console.log('✓ '+name)}
 
 await test('favorite status is loaded with project scope, never written on mount',async()=>{
- const m=mount(favoriteSource,async()=>state(12,false),{requirementId:12});await m.mount();assert.equal(m.favorited.value,false);assert.equal(m.loading.value,false);assert.equal(m.calls.length,1);assert.equal(m.calls[0].path,'/requirements/12/favorite');assert.equal(m.calls[0].options.headers['X-DevFlow-Project'],'p-current');assert.equal(m.calls[0].options.method,undefined);m.stop()
+ const m=mount(favoriteSource,async()=>state(12,false),{requirementId:12});await m.mount();assert.equal(m.favorited.value,false);assert.equal(m.loading.value,false);assert.equal(m.calls.length,1);assert.equal(m.calls[0].path,'/requirements/12/favorite');assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'],'p-current');assert.equal(m.calls[0].options.method,undefined);m.stop()
 })
 await test('favorite toggles await confirmation and guard double clicks with idempotent PUT/DELETE',async()=>{
  const pending=defer();let next=true
@@ -49,7 +53,7 @@ await test('late reads and writes cannot overwrite a different selected requirem
  const write=m.toggle();m.props.requirementId=14;assert.equal(m.favorited.value,null);requests[3].resolve(state(14,false));await settle();requests[2].resolve(state(13,true));await write;assert.equal(m.favorited.value,false);assert.equal(m.emitted.length,0);assert.equal(m.saving.value,false);m.stop()
 })
 await test('project changes freeze old request headers and invalidate old favorite responses',async()=>{
- const pending=defer();const m=mount(favoriteSource,async(path,options)=>options?.method?pending.promise:state(12,false),{requirementId:12});await m.mount();const write=m.toggle();m.storage.set('devflow-project','p-next');m.win.dispatchEvent(new Event('devflow-project-changed'));await settle();pending.resolve(state(12,true));await write;assert.equal(m.favorited.value,false);assert.equal(m.calls[1].options.headers['X-DevFlow-Project'],'p-current');assert.equal(m.calls.at(-1).options.headers['X-DevFlow-Project'],'p-next');assert.equal(m.emitted.length,0);m.stop()
+ const pending=defer();const m=mount(favoriteSource,async(path,options)=>options?.method?pending.promise:state(12,false),{requirementId:12});await m.mount();const write=m.toggle();m.storage.set('devflow-project','p-next');m.win.dispatchEvent(new Event('devflow-project-changed'));await settle();pending.resolve(state(12,true));await write;assert.equal(m.favorited.value,false);assert.equal(m.calls[1].options.headers['X-TaskLoom-Project'],'p-current');assert.equal(m.calls.at(-1).options.headers['X-TaskLoom-Project'],'p-next');assert.equal(m.emitted.length,0);m.stop()
 })
 await test('identity conflicts and unmount invalidate pending favorite work and remove listeners',async()=>{
  for(const action of ['devflow-identity-changed','devflow-auth-expired','unmount']){const pending=defer(),m=mount(favoriteSource,()=>pending.promise,{requirementId:12});await m.mount();if(action==='unmount')m.stop();else m.win.dispatchEvent(new Event(action));pending.resolve(state(12,true));await settle();assert.equal(m.favorited.value,null);const before=m.calls.length;await m.toggle();assert.equal(m.calls.length,before);if(action!=='unmount')m.stop();assert([...m.win.listeners.values()].every(set=>!set.size))}
@@ -68,7 +72,7 @@ await test('personal work sorting is stable, numeric for IDs, and keeps missing 
  const m=mount(workSource);m.items.value=[{id:2,projectId:'a',dueDate:''},{id:10,projectId:'a',dueDate:'2026-09-02'},{id:1,projectId:'a',dueDate:'2026-09-01'}];m.sort.value='code';m.order.value='asc';assert.deepEqual(m.sortedItems.value.map(x=>x.id),[1,2,10]);m.sort.value='dueDate';m.order.value='desc';assert.deepEqual(m.sortedItems.value.map(x=>x.id),[10,1,2]);m.order.value='asc';assert.deepEqual(m.sortedItems.value.map(x=>x.id),[1,10,2]);assert.deepEqual(m.items.value.map(x=>x.id),[2,10,1]);m.stop()
 })
 await test('inaccessible cross-project favorite does not change current project or navigate',async()=>{
- const m=mount(workSource,async()=>{throw Error('access revoked')});await m.go({id:3,projectId:'p-denied',url:'/requirements?req=3',favorited:true});assert.equal(m.storage.get('devflow-project'),'p-current');assert.equal(m.location.href,'');assert.equal(m.error.value,'access revoked');assert.equal(m.calls[0].options.headers['X-DevFlow-Project'],'p-denied');m.stop()
+ const m=mount(workSource,async()=>{throw Error('access revoked')});await m.go({id:3,projectId:'p-denied',url:'/requirements?req=3',favorited:true});assert.equal(m.storage.get('devflow-project'),'p-current');assert.equal(m.location.href,'');assert.equal(m.error.value,'access revoked');assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'],'p-denied');m.stop()
 })
 await test('late favorite navigation cannot override a newer project context',async()=>{
  const pending=defer(),m=mount(workSource,()=>pending.promise);const opening=m.go({id:3,projectId:'p-other',url:'/requirements?req=3',favorited:true});m.storage.set('devflow-project','p-new-context');pending.resolve(state(3,true));await opening;assert.equal(m.storage.get('devflow-project'),'p-new-context');assert.equal(m.location.href,'');m.stop()

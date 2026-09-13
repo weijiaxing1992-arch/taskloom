@@ -5,7 +5,7 @@ import { t, formatDate } from '../i18n'
 import { layoutScope } from '../layoutScope'
 import { clipboardNeedsMembers, completeClipboardRequirement, requirementClipboard, type ClipboardMember, type ClipboardRequirement } from '../requirementClipboard'
 
-const props=withDefaults(defineProps<{requirement:ClipboardRequirement;members?:ClipboardMember[];projectId?:string;disabled?:boolean;openOnClick?:boolean}>(),{members:()=>[],openOnClick:true})
+const props=withDefaults(defineProps<{requirement:ClipboardRequirement;members?:ClipboardMember[];projectId?:string;disabled?:boolean;openOnClick?:boolean;displayCode?:string}>(),{members:()=>[],openOnClick:true})
 const emit=defineEmits<{(event:'open'):void}>()
 const busy=ref(false),invalid=ref(false),feedback=ref(''),failed=ref(false),fallbackText=ref('')
 const trigger=ref<HTMLButtonElement|null>(null),dialog=ref<HTMLDialogElement|null>(null),textarea=ref<HTMLTextAreaElement|null>(null)
@@ -14,7 +14,8 @@ const pageProject=()=>{try{return localStorage.getItem('devflow-project')||'prj_
 const targetProject=computed(()=>props.projectId||props.requirement.projectId||pageProject())
 const scopeIdentity=layoutScope.value
 let version=0,disposed=false,clickTimer:ReturnType<typeof setTimeout>|undefined,noticeTimer:ReturnType<typeof setTimeout>|undefined,controller:AbortController|undefined
-const code=computed(()=>props.requirement.code||String(props.requirement.id))
+// displayCode 仅改变可见标签；协作摘要仍使用服务端原始编号，避免影响既有导出和追溯。
+const code=computed(()=>props.displayCode?.trim()||props.requirement.code||String(props.requirement.id))
 function cancelClick(){clearTimeout(clickTimer);clickTimer=undefined}
 function valid(){return !disposed&&!invalid.value&&!props.disabled&&!!scopeIdentity&&scopeIdentity===layoutScope.value}
 function capture(){return{version:++version,id:Number(props.requirement.id),target:targetProject.value,page:pageProject(),identity:layoutScope.value}}
@@ -40,7 +41,7 @@ async function copy(){
   cancelClick();if(!valid()||busy.value)return
   const request=capture();if(!Number.isSafeInteger(request.id)||request.id<=0||!request.target){announce('需求编号无效，无法复制',true);return}
   if(props.requirement.objectType&&props.requirement.objectType!=='requirement'||['缺陷','迭代','测试用例','测试执行','测试计划','项目','defect'].includes(props.requirement.type||'')){announce('仅需求编号支持协作摘要',true);return}
-  controller?.abort();controller=new AbortController();const options={headers:{'X-DevFlow-Project':request.target},signal:controller.signal}
+  controller?.abort();controller=new AbortController();const options={headers:{'X-TaskLoom-Project':request.target},signal:controller.signal}
   busy.value=true;feedback.value='';failed.value=false
   try{
     let item:ClipboardRequirement=JSON.parse(JSON.stringify(props.requirement)),members=[...props.members]

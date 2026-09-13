@@ -89,7 +89,7 @@ func scanTestCaseWithRequirement(row testCaseRowScanner, c *TestCase) error {
 	}
 	parseJSON(stepsJSON, &c.StepsDetail)
 	if referenceID.Valid {
-		c.Requirement = &RequirementReference{ID: referenceID.Int64, Code: referenceCode.String, Title: referenceTitle.String, Status: referenceStatus.String}
+		c.Requirement = &RequirementReference{ID: referenceID.Int64, Code: requirementDisplayCode(referenceID.Int64, referenceCode.String), Title: referenceTitle.String, Status: referenceStatus.String}
 		return nil
 	}
 	// 关联对象不存在或不属于当前项目时，不允许旧的 raw foreign key 继续出现在响应中。
@@ -110,6 +110,9 @@ func (a *App) migrateRequirementTestCaseTraceability() error {
 func (a *App) requirementTestCaseReference(ctx context.Context, q stateStore, id int64) (RequirementReference, error) {
 	var reference RequirementReference
 	err := q.QueryRowContext(ctx, `SELECT id,code,title,status FROM requirements WHERE tenant_id=? AND project_id=? AND id=?`, tenantID, a.pid(), id).Scan(&reference.ID, &reference.Code, &reference.Title, &reference.Status)
+	if err == nil {
+		reference.Code = requirementDisplayCode(reference.ID, reference.Code)
+	}
 	return reference, err
 }
 

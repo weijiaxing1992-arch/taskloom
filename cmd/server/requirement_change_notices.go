@@ -36,7 +36,7 @@ func (a *App) requirementSnapshot(tx *sql.Tx, id int64) (Requirement, map[string
 	if err = json.Unmarshal(encoded, &values); err != nil {
 		return x, nil, err
 	}
-	for _, key := range []string{"updatedAt", "createdAt", "statusName", "statusColor", "statusCategory", "statusSystem", "isEnd", "assignees", "owners", "weightTotal"} {
+	for _, key := range []string{"updatedAt", "createdAt", "statusName", "statusColor", "statusCategory", "statusSystem", "isEnd", "assignees", "owners", "weightTotal", "iterationDelayCount"} {
 		// 排除时间戳、目录展示元数据及派生总权重，避免同内容保存或人员改名产生假变化。
 		delete(values, key)
 	}

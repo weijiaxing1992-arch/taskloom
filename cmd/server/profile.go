@@ -25,11 +25,12 @@ import (
 var phonePattern = regexp.MustCompile(`^[0-9+()\- ]*$`)
 
 type profileMembership struct {
-	ProjectID   string `json:"projectId"`
-	ProjectName string `json:"projectName"`
-	ProjectCode string `json:"projectCode"`
-	Role        string `json:"role"`
-	Status      string `json:"status"`
+	ProjectID    string   `json:"projectId"`
+	ProjectName  string   `json:"projectName"`
+	ProjectCode  string   `json:"projectCode"`
+	Role         string   `json:"role"`
+	ProjectRoles []string `json:"projectRoles"`
+	Status       string   `json:"status"`
 }
 
 type profileData struct {
@@ -76,16 +77,18 @@ func (a *App) getProfile() (profileData, error) {
 	}
 	p.PasswordConfigured = passwordHash != ""
 	p.Memberships = []profileMembership{}
-	rows, err := a.db.Query(`SELECT p.id,p.name,p.code,pm.role,p.status FROM project_members pm JOIN projects p ON p.tenant_id=pm.tenant_id AND p.id=pm.project_id WHERE pm.tenant_id=? AND pm.user_id=? AND p.status='active' ORDER BY p.status,p.name`, tenantID, a.uid())
+	rows, err := a.db.Query(`SELECT p.id,p.name,p.code,pm.role,p.status,`+projectRolesJSONSQL("pm")+` FROM project_members pm JOIN projects p ON p.tenant_id=pm.tenant_id AND p.id=pm.project_id WHERE pm.tenant_id=? AND pm.user_id=? AND p.status='active' ORDER BY p.status,p.name`, tenantID, a.uid())
 	if err != nil {
 		return p, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var membership profileMembership
-		if err = rows.Scan(&membership.ProjectID, &membership.ProjectName, &membership.ProjectCode, &membership.Role, &membership.Status); err != nil {
+		var rawRoles string
+		if err = rows.Scan(&membership.ProjectID, &membership.ProjectName, &membership.ProjectCode, &membership.Role, &membership.Status, &rawRoles); err != nil {
 			return p, err
 		}
+		membership.ProjectRoles = decodedProjectRoles(rawRoles, membership.Role)
 		p.Memberships = append(p.Memberships, membership)
 	}
 	return p, rows.Err()
@@ -152,15 +155,6 @@ func (a *App) profile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 422, "validation_error", "通知偏好不能为空")
 		return
 	}
-	var conflict int
-	if err := a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users WHERE tenant_id=? AND lower(email)=lower(?) AND id<>?`, tenantID, update.Email, a.uid()).Scan(&conflict); err != nil {
-		fail(w, http.StatusServiceUnavailable, "database_unavailable", "个人资料暂时无法读取，请稍后重试")
-		return
-	}
-	if conflict > 0 {
-		fail(w, 409, "email_exists", "该邮箱已被其他成员使用")
-		return
-	}
 	var oldName string
 	if err = a.db.QueryRow(`SELECT name FROM users WHERE tenant_id=? AND id=?`, tenantID, a.uid()).Scan(&oldName); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -177,6 +171,20 @@ func (a *App) profile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	// 与员工创建共用邮箱占用规则，并先取得写锁，避免校验后另一请求抢占邮箱。
+	if _, err = tx.ExecContext(r.Context(), `UPDATE organization_write_locks SET revision=revision+1 WHERE tenant_id=?`, tenantID); err != nil {
+		fail(w, http.StatusServiceUnavailable, "database_unavailable", "个人资料暂时无法保存，请稍后重试")
+		return
+	}
+	conflict, err := organizationEmailInUse(r.Context(), tx, update.Email, a.uid())
+	if err != nil {
+		fail(w, http.StatusServiceUnavailable, "database_unavailable", "个人资料暂时无法读取，请稍后重试")
+		return
+	}
+	if conflict {
+		fail(w, 409, "email_exists", "该邮箱已被其他成员使用")
+		return
+	}
 	if _, err = tx.Exec(`UPDATE users SET name=?,email=?,phone=?,job_title=?,bio=?,avatar_color=?,locale=?,timezone=?,email_notifications=? WHERE tenant_id=? AND id=?`, update.Name, update.Email, update.Phone, update.JobTitle, update.Bio, update.AvatarColor, update.Locale, update.Timezone, *update.EmailNotifications, tenantID, a.uid()); err != nil {
 		fail(w, 500, "db_error", err.Error())
 		return

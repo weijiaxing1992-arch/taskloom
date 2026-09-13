@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises'
 import ts from 'typescript'
 const root=new URL('../',import.meta.url)
 const source=await readFile(new URL('src/workItemQuery.ts',root),'utf8')
+const requirementsSource=await readFile(new URL('src/views/Requirements.vue',root),'utf8')
 const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
 const helpers={};new Function('exports',output)(helpers)
 const {workItemFields,workFilterValue,queryWorkItems,workItemPersonNames,workOperators}=helpers
@@ -15,7 +16,21 @@ const c={id:1,objectType:'defect',code:'BUG-0001',title:'Empty',customFields:{co
 let count=0
 function test(name,run){run();count++;console.log('✓ '+name)}
 test('all five difficulty columns are defaults and all enabled custom types are available',()=>{for(const role of ['frontend','backend','ui','algorithm','product'])assert(fields.find(x=>x.key===`role.${role}.value`).default);assert(!fields.some(x=>x.key.endsWith('.hidden')));assert(fields.some(x=>x.key==='cf.requirement.cost'));assert(fields.some(x=>x.key==='cf.defect.cost'));for(const field of fields)assert(workOperators(field).length)})
+test('dependency-state filtering is available for requirements only and has a dedicated blocked quick view',()=>{
+ const requirementFields=workItemFields([],[],false),dependency= requirementFields.find(field=>field.key==='dependencyState')
+ assert.deepEqual(dependency?.options?.map(option=>option.value),['blocked','blocking','related','clear'])
+ assert.deepEqual(workOperators(dependency),['eq','neq','is_empty','not_empty'])
+ assert.equal(fields.some(field=>field.key==='dependencyState'),false,'mixed sprint lists must not treat defects as requirement dependencies')
+ const records=[{id:1,code:'REQ-1',title:'Blocked',dependencyState:'blocked'},{id:2,code:'REQ-2',title:'Clear',dependencyState:'clear'}]
+ assert.deepEqual(queryWorkItems(records,requirementFields,[{field:'dependencyState',operator:'eq',value:'blocked'}],'code','asc').map(item=>item.id),[1])
+ assert.match(requirementsSource,/toggleBlockedFilter/)
+ assert.match(requirementsSource,/field:'dependencyState',operator:'eq',value:'blocked'/)
+})
 test('numeric sorting is numeric, nulls always last, and code sorting is by numeric ID',()=>{assert.deepEqual(queryWorkItems([c,b,a],fields,[],'role.frontend.value','asc').map(x=>x.id),[2,10,1]);assert.deepEqual(queryWorkItems([c,b,a],fields,[],'role.frontend.value','desc').map(x=>x.id),[10,2,1]);assert.deepEqual(queryWorkItems([b,a],fields,[],'code','asc').map(x=>x.id),[2,10])})
+test('iteration type ordering puts requirements before defects with a stable in-type order',()=>{
+ assert.deepEqual(queryWorkItems([c,b,a],fields,[],'objectType','asc').map(x=>x.id),[2,10,1])
+ assert.deepEqual(queryWorkItems([a,c,b],fields,[],'objectType','desc').map(x=>x.id),[1,2,10])
+})
 test('AND filters include secondary people, explicit zero/false and array membership',()=>{const rules=[{field:'assignee',operator:'includes',value:'u2'},{field:'owner',operator:'includes',value:'u2'},{field:'role.frontend.userId',operator:'includes',value:'u2'},{field:'role.ui.value',operator:'eq',value:0},{field:'sensitive',operator:'eq',value:false},{field:'cf.requirement.checks',operator:'includes',value:'B'},{field:'tags',operator:'includes',value:'tag2'}];assert.deepEqual(queryWorkItems([a,b,c],fields,rules,'code','asc').map(x=>x.id),[2]);assert.deepEqual(workItemPersonNames(a,'assignee',members),['Same','Same'])})
 test('scoped custom keys do not collide across requirement/defect types',()=>{assert.deepEqual(queryWorkItems([a,b,c],fields,[{field:'cf.requirement.cost',operator:'gt',value:5}],'code','asc').map(x=>x.id),[2]);assert.deepEqual(queryWorkItems([a,b,c],fields,[{field:'cf.defect.cost',operator:'contains',value:'business'}],'code','asc').map(x=>x.id),[1])})
 test('missing values require explicit empty conditions and are not numeric zero/false',()=>{assert.deepEqual(queryWorkItems([a,b,c],fields,[{field:'role.ui.value',operator:'is_empty'}],'code','asc').map(x=>x.id),[1,10]);assert.equal(queryWorkItems([c],fields,[{field:'sensitive',operator:'neq',value:false}],'code','asc').length,0)})

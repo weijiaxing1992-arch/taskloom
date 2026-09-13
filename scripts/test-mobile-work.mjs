@@ -5,9 +5,11 @@ import * as Vue from 'vue'
 const read = path => readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const source = read('src/views/Search.vue').match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]
 const code=ts.transpileModule(source+'\nexport {search,q,items,loading,error,compositionStart,compositionEnd,submitSearch}',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
+const recentSearches={}
+new Function('exports',ts.transpileModule(read('src/recentSearches.ts'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(recentSearches)
 function setup(){
  const scope=Vue.effectScope(),exports={},calls=[],timers=new Map();let seq=0,unmount
- const imports={vue:{...Vue,onMounted(){},onBeforeUnmount(fn){unmount=fn}},'vue-router':{useRoute:()=>({query:{}})},'../api':{api:(path,options)=>new Promise((resolve,reject)=>calls.push({path,options,resolve,reject}))},'../i18n':{t:x=>x,locale:Vue.ref('zh-CN'),formatDate:x=>x},'../requirementWorkflow':{}}
+ const imports={vue:{...Vue,onMounted(){},onBeforeUnmount(fn){unmount=fn}},'vue-router':{useRoute:()=>({query:{}})},'../api':{api:(path,options)=>new Promise((resolve,reject)=>calls.push({path,options,resolve,reject}))},'../i18n':{t:x=>x,locale:Vue.ref('zh-CN'),formatDate:x=>x},'../requirementWorkflow':{},'../recentSearches':recentSearches}
  scope.run(()=>new Function('require','exports','setTimeout','clearTimeout','window',code)(id=>imports[id]||{},exports,fn=>{timers.set(++seq,fn);return seq},id=>timers.delete(id),{removeEventListener(){}}))
  return {...exports,calls,flush(){const pending=[...timers.values()];timers.clear();pending.forEach(fn=>fn())},stop(){unmount();scope.stop()}}
 }
@@ -36,7 +38,7 @@ await test('mobile filter panels keep desktop controls, explicit expanded states
  const css=read('src/mobile-refinements.css');assert(css.includes('.mobile-advanced-filters{display:contents}'));assert(css.includes('.mobile-advanced-filters.is-expanded{display:grid'));assert(css.includes('.app-shell .btn.mobile-filter-toggle{display:none!important}'));assert(!read('src/views/Search.vue').includes('autofocus'))
 })
 await test('quick navigation uses native internal links and live unread prop, and admin config is discoverable without widening permission',()=>{
- const nav=read('src/components/MobileWorkNavigation.vue');for(const route of ['/my-work','/search','/notifications','/projects'])assert(nav.includes(route));assert(nav.includes('<RouterLink'));assert(nav.includes('env(safe-area-inset-bottom)'));assert(!nav.includes('position:fixed'))
- const admin=read('src/views/Organization.vue');assert(admin.includes('context?.isTenantAdmin&&section!==\'wechat-login\'&&!scope.locked.value'));assert(admin.includes('class="btn org-wechat-entry" to="/organization/wechat-login"'))
+ const nav=read('src/components/MobileWorkNavigation.vue');for(const route of ['/my-work','/requirements','/iterations','/notifications'])assert(nav.includes(route));assert(nav.includes('<RouterLink'));assert(nav.includes('env(safe-area-inset-bottom)'));assert(!nav.includes('position:fixed'))
+ const admin=read('src/views/Organization.vue');assert(admin.includes('context?.isTenantAdmin&&section!==\'wecom-app\'&&!scope.locked.value'));assert(admin.includes('class="btn org-wechat-entry" to="/organization/wecom-app"'))
 })
 console.log(`Passed ${count} mobile work and live search regressions.`)

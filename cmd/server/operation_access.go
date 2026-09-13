@@ -9,6 +9,18 @@ import (
 
 const operationDisabledMessage = "账号业务操作已禁用，请联系企业管理员"
 
+// readOnlyImpersonationRequestKey is set only by scopedAPI after it has
+// authenticated the administrator, resolved a current read-only delegation,
+// and admitted the request through the narrow read-only route policy. It lets
+// downstream read helpers avoid treating the target's first-password marker as
+// a blocking login screen. It must never be synthesized by a handler.
+type readOnlyImpersonationRequestKey struct{}
+
+func isReadOnlyImpersonationRequest(ctx context.Context) bool {
+	allowed, _ := ctx.Value(readOnlyImpersonationRequestKey{}).(bool)
+	return allowed
+}
+
 // Business suspension is distinct from activation/security deactivation. A
 // suspended, activated user may authenticate, but has no business API access.
 // operation_disabled 是“可登录但禁止业务操作”；active=0 / 企业成员未激活仍不得登录，二者不能混用。
@@ -37,6 +49,14 @@ func (a *App) requireOperationAccess(ctx context.Context, store stateStore) erro
 	}
 	if disabled {
 		return &organizationError{403, "account_disabled", operationDisabledMessage}
+	}
+	// The router only attaches this marker after rejecting every write except
+	// the membership-checked project visit used to open a notification in a
+	// different project. Keeping the first-password flag intact while allowing
+	// these safe reads makes an explicit enterprise review usable without
+	// granting a way to set credentials or mutate target data.
+	if isReadOnlyImpersonationRequest(ctx) {
+		return nil
 	}
 	return a.requirePasswordChanged(ctx, store)
 }

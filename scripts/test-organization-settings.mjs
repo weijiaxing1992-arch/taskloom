@@ -15,9 +15,9 @@ const context = (extra = {}) => ({ organization: { id: 'tenant', name: 'Test org
 const member = (extra = {}) => ({ id: 'u', name: '同名成员', email: 'first@example.test', employeeNo: '001', active: true, tenantRole: 'member', departmentIds: ['frontend'], primaryDepartmentId: 'frontend', projectMemberships: [{ projectId: 'p', role: 'developer' }], groupIds: [], ...extra })
 const department = (id, parentId = null) => ({ id, name: id, code: id, parentId, status: 'active', sortOrder: 0, memberCount: 0 })
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
-const common = 'saving,error,notice,opened,dirty,form,load,close,canLeave,beforeProjectChange,cancelProjectLeave,beforeUnload'
+const common = 'loading,saving,error,notice,opened,dirty,form,load,close,canLeave,beforeProjectChange,cancelProjectLeave,beforeUnload'
 const exposed = {
-  Members: common + ',items,departments,session,filtered,department,query,editing,open,save,roleName,projectRoleOptions,importOpen,csv,preview,importConfirmed,previewImport,commitImport,webhookMember,webhookEditor,webhookBusy,openWebhook,closeWebhook,canConfigureWebhook,deleteTarget,deleteConfirmed,canDeleteMember,prepareDelete,removeMember,closeDelete,impersonating,reason,prepareImpersonation,closeImpersonation',
+  Members: common + ',items,departments,session,filtered,department,query,editing,open,save,roleName,projectRoleOptions,importOpen,csv,preview,importConfirmed,previewImport,commitImport,webhookMember,webhookEditor,webhookBusy,openWebhook,closeWebhook,canConfigureWebhook,deleteTarget,deleteConfirmed,canDeleteMember,prepareDelete,removeMember,closeDelete,impersonating,reason,canImpersonateMember,validImpersonationReason,prepareImpersonation,startImpersonation,closeImpersonation',
   Directory: common + ',departments,members,permissions,selected,editing,open,save,eligibleParents,hasAncestor,selectAll,canManage',
   Invitations: common + ',allowed,createDialog,create,createdLink,review,decision,approval,reviewConfirmed,startReview,submitReview',
 }
@@ -28,8 +28,22 @@ function setup(kind, options = {}) {
   let confirm = true, project = 'p', handler = options.handler || (async path => path === '/session' ? { user: { id: 'me' } } : { items: [], id: 'new' })
   const scope = { locked, project: 'p', current: () => !locked.value, request: async (path, init) => { calls.push({ path, init }); return handler(path, init) } }
   const imports = { vue: { ...Vue, onMounted: fn => mounted.push(fn), onBeforeUnmount: fn => unmount.push(fn) }, 'vue-router': { onBeforeRouteLeave: fn => routes.push(fn), onBeforeRouteUpdate: fn => routes.push(fn) }, '../organization': helpers, './settingsScope': { useSettingsScope: () => scope }, '../i18n': { t: (x, params = {}) => x.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(params, key) ? String(params[key]) : token), formatDate: x => x, locale:Vue.ref('zh-CN') } }
-  const m = effects.run(() => evaluate(source + '\nexport {' + exposed[kind] + '}', imports, { defineProps: () => props, defineEmits: () => (...args) => emits.push(args), localStorage: { getItem: () => project }, window: { confirm: message => { confirmations.push(message); return confirm }, addEventListener: (key, fn) => events.set(key, fn), removeEventListener: key => events.delete(key) }, location: { origin: 'http://127.0.0.1:19084' } }))
+  const m = effects.run(() => evaluate(source + '\nexport {' + exposed[kind] + '}', imports, { defineProps: () => props, defineEmits: () => (...args) => emits.push(args), localStorage: { getItem: () => project, setItem: (_key, value) => { project = String(value) } }, window: { confirm: message => { confirmations.push(message); return confirm }, addEventListener: (key, fn) => events.set(key, fn), removeEventListener: key => events.delete(key) }, location: { origin: 'http://127.0.0.1:19084', href: '' } }))
   return { ...m, props, calls, emits, locked, events, routes, confirmations, setConfirm(value) { confirm = value }, setProject(value) { project = value }, setHandler(value) { handler = value }, mount() { mounted.forEach(fn => fn()) }, stop() { unmount.forEach(fn => fn()); effects.stop() } }
+}
+function setupLegacyMembers() {
+  const source = read('src/views/Members.vue').match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]
+  const effects = Vue.effectScope(), calls = [], storage = new Map(), location = { href: '' }
+  const imports = {
+    vue: { ...Vue, onMounted: () => {} },
+    '../i18n': { t: value => value, formatDate: value => value, locale: Vue.ref('zh-CN') },
+    '../api': { api: async (path, init) => { calls.push({ path, init }); return { projectId: 'target-project' } } },
+  }
+  const instance = effects.run(() => evaluate(source + '\nexport { context,impersonating,reason,canImpersonateMember,validImpersonationReason,prepareImpersonation,startImpersonation,closeImpersonation }', imports, {
+    localStorage: { setItem: (key, value) => storage.set(key, String(value)) },
+    location,
+  }))
+  return { ...instance, calls, storage, location, stop: () => effects.stop() }
 }
 const flush = async () => { await Vue.nextTick(); for (let i = 0; i < 6; i++) await Promise.resolve() }
 let count = 0
@@ -150,6 +164,7 @@ await test('member deletion is tenant-admin-only, excludes self, requires an exp
 })
 await test('impersonation pre-fills a clear work-viewing audit reason without flagging an untouched modal as a draft', () => {
   const m = setup('Members'), target = member({ id: 'inspect-me', name: '待查看成员' })
+  m.loading.value = false; m.session.value = { user: { id: 'me' }, canImpersonate: true }
   m.prepareImpersonation(target)
   assert.equal(m.impersonating.value.id, 'inspect-me')
   assert.equal(m.reason.value, '查看工作')
@@ -161,11 +176,49 @@ await test('impersonation pre-fills a clear work-viewing audit reason without fl
   assert.equal(m.reason.value, '')
   m.stop()
 })
+await test('a pending first-password member can only enter the clearly marked read-only review from an authorized administrator', async () => {
+  const m = setup('Members', { handler: async path => path === '/auth/impersonation' ? { projectId: 'target-project', readOnly: true } : { items: [] } })
+  const target = member({ id: 'pending-review', mustChangePassword: true })
+  m.loading.value = false; m.session.value = { user: { id: 'me' }, canImpersonate: true }
+  assert.equal(m.canImpersonateMember(target), true)
+  m.prepareImpersonation(target)
+  assert.equal(m.impersonating.value.id, 'pending-review')
+  assert.equal(m.validImpersonationReason(m.reason.value), true)
+  await m.startImpersonation()
+  const request = m.calls.find(call => call.path === '/auth/impersonation')
+  assert.deepEqual(JSON.parse(request.init.body), { userId: 'pending-review', reason: '查看工作' })
+  m.session.value = { user: { id: 'me' }, canImpersonate: false }
+  m.impersonating.value = null
+  m.prepareImpersonation(target)
+  assert.equal(m.impersonating.value, null)
+  assert.equal(m.validImpersonationReason('短'), false)
+  m.stop()
+})
+await test('legacy Members entry applies the same pending-password review guard, wording, and reason validation', async () => {
+  const m = setupLegacyMembers(), target = { id: 'legacy-pending', active: true, mustChangePassword: true }
+  m.context.value = { user: { id: 'admin' }, canImpersonate: true }
+  assert.equal(m.canImpersonateMember(target), true)
+  m.prepareImpersonation(target)
+  assert.equal(m.impersonating.value.id, 'legacy-pending')
+  assert.equal(m.reason.value, '查看工作')
+  m.reason.value = '短'; await m.startImpersonation(); assert.equal(m.calls.length, 0)
+  m.reason.value = '核查待改密成员可见范围'; await m.startImpersonation()
+  assert.deepEqual(JSON.parse(m.calls[0].init.body), { userId: 'legacy-pending', reason: '核查待改密成员可见范围' })
+  assert.equal(m.storage.get('devflow-project'), 'target-project'); assert.equal(m.location.href, '/my-work')
+  m.closeImpersonation(); assert.equal(m.impersonating.value, null); assert.equal(m.reason.value, '')
+  m.context.value = { user: { id: 'admin' }, canImpersonate: false }; m.prepareImpersonation(target); assert.equal(m.impersonating.value, null)
+  assert.match(read('src/views/Members.vue'), /受限代看（待首次改密账号）/)
+  m.stop()
+})
 await test('organization templates compile and route/event listeners are registered and removed as pairs', async () => {
   for (const kind of Object.keys(exposed)) {
     const filename = 'src/components/Organization' + kind + '.vue', { descriptor, errors } = parse(read(filename), { filename })
     assert.deepEqual(errors, []); const compiled = compileTemplate({ source: descriptor.template.content, filename, id: kind, compilerOptions: { expressionPlugins: ['typescript'] } }); assert.deepEqual(compiled.errors, [], kind)
     if (kind === 'Members') assert.match(descriptor.template.content, /id="org-member-form"[^>]*:inert="saving"/)
+    if (kind === 'Members') {
+      assert.match(descriptor.template.content, /受限代看（待首次改密账号）/)
+      assert.match(descriptor.template.content, /不能修改业务、通知已读状态、显示偏好、密码或权限/)
+    }
     const m = setup(kind); m.mount(); await flush(); assert.equal(m.routes.length, 2); assert(m.events.has('devflow-before-project-change')); assert(m.events.has('devflow-project-change-cancelled')); m.stop(); assert.equal(m.events.size, 0)
   }
 })

@@ -8,6 +8,16 @@ export interface WorkloadReport {
   sprintCount: number; totals: WorkloadMetrics; people: WorkloadPerson[]; departments: WorkloadDepartment[]; roles: WorkloadRole[]
   unassignedWeight: number; unassignedRequirementCount: number; unassignedDefectCount: number; unestimatedRequirementCount: number; ambiguousSprintItemCount: number
 }
+export interface WorkloadPersonalScope { type: 'personal'|'team'; tenantId: string; tenantName: string; projectCount: number }
+export interface WorkloadTeamAvailability { available: boolean; departmentId?: string; departmentName?: string; projectCount?: number; memberCount?: number }
+export interface PersonalWorkloadReport {
+  month: string; startDate: string; endDateExclusive: string; generatedAt: string; snapshot: boolean; precision: number
+  scope: WorkloadPersonalScope; sprintCount: number; person: WorkloadPerson; team: WorkloadTeamAvailability
+}
+export interface TeamWorkloadReport {
+  month: string; startDate: string; endDateExclusive: string; generatedAt: string; snapshot: boolean; precision: number
+  scope: WorkloadPersonalScope; sprintCount: number; people: WorkloadPerson[]
+}
 export const workloadRoleNames: Record<string, string> = { frontend: '前端', backend: '后端', algorithm: '算法', ui: 'UI 设计', product: '产品', other: '其他职能' }
 export type WorkloadDimension = 'people' | 'departments' | 'roles'
 export type WorkloadSort = 'name' | 'weight' | 'requirementCount' | 'shippedRequirementCount' | 'defectCount'

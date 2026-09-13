@@ -40,6 +40,21 @@ function editorFixture(current, existing) {
  return { ...m, calls, stop() { unmount.forEach(fn => fn()); scope.stop() } }
 }
 let count = 0; async function test(name, run) { await run(); count++; console.log('✓ ' + name) }
+await test('manager candidates include actual tenant admins without granting QA or engineer eligibility', async () => {
+ const directory = [
+  { id: 'tenant-manager', name: '企业管理员', tenantRole: 'tenant_admin', projectRole: 'viewer', projectRoles: ['viewer'], active: true, departmentIds: ['delivery'] },
+  { id: 'project-manager', name: '项目管理员', tenantRole: 'member', projectRoles: ['project_admin'], active: true, departmentIds: ['delivery'] },
+  { id: 'ordinary', name: '普通成员', tenantRole: 'member', projectRoles: ['viewer'], active: true, departmentIds: ['delivery'] },
+  { id: 'disabled-manager', name: '停用管理员', tenantRole: 'tenant_admin', projectRoles: ['viewer'], active: false, departmentIds: ['delivery'] },
+  { id: 'other-manager', name: '其他部门管理员', tenantRole: 'tenant_admin', projectRoles: ['viewer'], active: true, departmentIds: ['other'] },
+ ]
+ const allowed = helpers.fieldMemberRoles({key:'managers'})
+ assert.deepEqual(helpers.memberCandidates(directory,allowed,'delivery').map(item=>item.id),['tenant-manager','project-manager'])
+ for(const roles of [['qa'],['product'],['frontend'],['project_admin']]) assert.equal(helpers.memberCandidates(directory,roles).some(item=>item.id==='tenant-manager'),false)
+ const m=mount('MemberMultiSelect',{modelValue:[],members:directory,memberRoles:allowed,departmentId:'delivery',currentUserId:'tenant-manager'})
+ assert.deepEqual(m.context.options.map(item=>item.id),['tenant-manager','project-manager']);m.context.selectMe();await flush();assert.deepEqual(m.props.modelValue,['tenant-manager'])
+ m.props.memberRoles=['qa'];await flush();assert.deepEqual(m.context.options,[]);assert.deepEqual(m.props.modelValue,['tenant-manager']);assert.equal(m.context.selected[0].historical,true);m.stop()
+})
 await test('each discipline has exact role candidates; leads are eligible engineers, not the reverse, and project roles take precedence', () => {
  const expected = { frontend: ['front', 'lead', 'other-department'], backend: ['back', 'back-lead'], algorithm: ['algorithm'], ui: ['ui'], product: ['product'] }
  for (const row of fields.roleWeightDefinitions) assert.deepEqual(helpers.memberCandidates(people, row.roles).map(item => item.id), expected[row.key])

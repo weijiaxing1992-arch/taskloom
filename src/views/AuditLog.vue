@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
 import { formatDate, locale, t } from '../i18n'
 import AppSelect from '../components/AppSelect.vue'
+import { auditActionLabel, auditActorFallbackLabel, auditFieldLabel, auditObjectLabel, auditObjectTypes } from '../auditHistory'
 
 type AuditChange = { field: string; before: string; after: string }
 type AuditItem = {
@@ -32,19 +33,16 @@ let loadVersion = 0
 let disposed = false
 let controller: AbortController | undefined
 
-const objectNames: Record<string, string> = {
-  requirement: '需求', defect: '缺陷', sprint: '迭代', test_case: '测试用例', test_plan: '测试计划', test_execution: '测试执行',
-  project: '项目', user: '成员', automation_rule: '自动化规则', field_definition: '自定义字段', ai_settings: 'AI 服务配置',
-  requirement_category: '需求分类', requirement_status: '需求状态', requirement_workflow: '需求工作流',
-}
 const objectOptions = computed(() => [
   { value: '', label: t('全部对象') },
-  ...Object.entries(objectNames).map(([value, label]) => ({ value, label: t(label) })),
+  ...auditObjectTypes.map(value => ({ value, label: t(auditObjectLabel(value)) })),
 ])
 
-function objectLabel(value: string) { return t(objectNames[value] || value) }
-function actionLabel(value: string) { return value || '—' }
-function actorLabel(item: AuditItem) { return item.actorName || item.actorId || t('系统事件') }
+function objectLabel(value: string) { return t(auditObjectLabel(value)) }
+function actionLabel(item: AuditItem) { return t(auditActionLabel(item.action, item.objectType)) }
+function actorLabel(item: AuditItem) { return item.actorName?.trim() || t(auditActorFallbackLabel(item.actorId)) }
+function actorHint(item: AuditItem) { return item.actorName?.trim() ? '' : t(auditActorFallbackLabel(item.actorId)) }
+function fieldLabel(value: string) { return t(auditFieldLabel(value)) }
 function objectLink(item: AuditItem) {
   if (!/^[1-9]\d*$/.test(item.objectId)) return ''
   const id = encodeURIComponent(item.objectId)
@@ -134,8 +132,8 @@ onBeforeUnmount(() => {
       <div class="audit-filter-title"><b>{{ t('筛选条件') }}</b><small>{{ t('当前项目管理员可查看；记录按时间倒序并以游标稳定翻页。') }}</small></div>
       <div class="audit-filter-grid">
         <AppSelect v-model="objectType" :options="objectOptions" :label="t('对象类型')" class="audit-object-select" />
-        <label><span>{{ t('操作动作') }}</span><input v-model="action" :placeholder="t('例如 requirement.updated')" maxlength="100"></label>
-        <label><span>{{ t('操作人 ID') }}</span><input v-model="actorId" :placeholder="t('例如 u_admin')" maxlength="100"></label>
+        <label><span>{{ t('操作标识（高级）') }}</span><input v-model="action" :placeholder="t('输入完整操作标识')" :title="t('仅在需要精确追溯时使用')" maxlength="100"></label>
+        <label><span>{{ t('操作账号（高级）') }}</span><input v-model="actorId" :placeholder="t('输入系统账号标识')" :title="t('仅在需要精确追溯时使用')" maxlength="100"></label>
         <label><span>{{ t('开始日期') }}</span><input v-model="from" type="date"></label>
         <label><span>{{ t('结束日期') }}</span><input v-model="to" type="date"></label>
         <div class="audit-filter-actions"><button type="submit" class="btn primary" :disabled="loading || loadingMore">{{ t('查询') }}</button><button type="button" class="btn" :disabled="loading || loadingMore" @click="resetFilters">{{ t('清空筛选') }}</button></div>
@@ -149,19 +147,23 @@ onBeforeUnmount(() => {
       <p class="audit-count">{{ t('已加载 {count} 条', { count: items.length }) }} · {{ t('第 {page} 页', { page }) }}</p>
       <article v-for="item in items" :key="item.id" class="audit-entry">
         <div class="audit-entry-head">
-          <div class="audit-identity"><span class="audit-avatar">{{ actorLabel(item).slice(0, 1) }}</span><div><b>{{ actorLabel(item) }}</b><small>{{ item.actorId || t('系统事件') }}</small></div></div>
+          <div class="audit-identity"><span class="audit-avatar">{{ actorLabel(item).slice(0, 1) }}</span><div><b>{{ actorLabel(item) }}</b><small v-if="actorHint(item)">{{ actorHint(item) }}</small></div></div>
           <time>{{ formatDate(item.createdAt) }}</time>
         </div>
-        <div class="audit-event"><span class="audit-object">{{ objectLabel(item.objectType) }}</span><span class="audit-object-id">#{{ item.objectId }}</span><b>{{ actionLabel(item.action) }}</b><router-link v-if="objectLink(item)" class="audit-open-link" :to="objectLink(item)" :aria-label="t('打开关联对象')">↗</router-link></div>
+        <div class="audit-event"><span class="audit-object">{{ objectLabel(item.objectType) }}</span><span class="audit-object-id">#{{ item.objectId }}</span><b :title="actionLabel(item)">{{ actionLabel(item) }}</b><router-link v-if="objectLink(item)" class="audit-open-link" :to="objectLink(item)" :aria-label="t('打开关联对象')">↗</router-link></div>
         <details class="audit-diff">
           <summary>{{ t('查看 {count} 项变更', { count: item.changes.length }) }}</summary>
           <dl>
             <div v-for="change in item.changes" :key="`${item.id}-${change.field}`">
-              <dt>{{ t(change.field) }}</dt>
+              <dt>{{ fieldLabel(change.field) }}</dt>
               <dd><span><small>{{ t('变更前') }}</small>{{ t(change.before) }}</span><span><small>{{ t('变更后') }}</small>{{ t(change.after) }}</span></dd>
             </div>
           </dl>
           <p v-if="item.changesTrimmed" class="audit-trimmed">{{ t('更多变更未展示') }}</p>
+        </details>
+        <details class="audit-trace">
+          <summary>{{ t('查看追溯信息') }}</summary>
+          <p><span>{{ t('操作账号标识') }}：<code>{{ item.actorId || '—' }}</code></span><span>{{ t('对象标识') }}：<code>{{ item.objectType || '—' }}</code></span><span>{{ t('操作标识') }}：<code>{{ item.action || '—' }}</code></span></p>
         </details>
       </article>
       <div class="audit-more"><button v-if="nextCursor" type="button" class="btn" :disabled="loadingMore" @click="load(true)">{{ loadingMore ? t('正在读取审计记录…') : t('继续加载') }}</button><span v-else>{{ t('没有更多记录') }}</span></div>
@@ -170,7 +172,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.audit-page{max-width:1240px;margin:0 auto;padding-bottom:42px}.audit-heading{align-items:flex-start}.audit-heading>.btn{margin-top:4px}.audit-filters{display:grid;gap:16px;padding:18px 20px;margin-bottom:16px;border:1px solid var(--border);background:var(--card)}.audit-filter-title{display:grid;gap:4px}.audit-filter-title b{font-size:14px;color:var(--foreground)}.audit-filter-title small{font-size:12px;line-height:1.65;color:var(--muted-foreground)}.audit-filter-grid{display:grid;grid-template-columns:minmax(138px,.8fr) minmax(170px,1.25fr) minmax(150px,1fr) minmax(140px,.82fr) minmax(140px,.82fr) auto;gap:10px;align-items:end}.audit-filter-grid label{display:grid;gap:6px;min-width:0;font-size:12px;color:var(--muted-foreground)}.audit-filter-grid input{width:100%;min-width:0;height:36px;padding:7px 10px;border:1px solid var(--input);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:12px}.audit-filter-grid input:focus-visible{outline:2px solid color-mix(in srgb,var(--ring) 55%,transparent);outline-offset:1px;border-color:var(--ring)}.audit-object-select{width:100%;min-width:0}.audit-object-select :deep(.app-select-trigger){width:100%}.audit-filter-actions{display:flex;gap:8px;align-items:center;min-height:36px;white-space:nowrap}.audit-error{margin-bottom:16px}.audit-stream{display:grid;gap:10px}.audit-count{margin:3px 0 0;color:var(--muted-foreground);font-size:12px}.audit-entry{border:1px solid var(--border);border-radius:12px;background:var(--card);padding:16px 18px;box-shadow:0 1px 2px color-mix(in srgb,var(--foreground) 5%,transparent)}.audit-entry-head{display:flex;align-items:center;justify-content:space-between;gap:14px}.audit-identity{display:flex;align-items:center;gap:9px;min-width:0}.audit-avatar{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:9px;background:color-mix(in srgb,var(--primary) 12%,var(--card));color:var(--primary);font-size:13px;font-weight:700}.audit-identity div{display:grid;gap:2px;min-width:0}.audit-identity b{font-size:13px;color:var(--foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.audit-identity small,.audit-entry time{font-size:11px;color:var(--muted-foreground)}.audit-event{display:flex;align-items:center;gap:7px;min-width:0;margin:13px 0 10px}.audit-object{padding:3px 7px;border-radius:6px;background:var(--secondary);color:var(--secondary-foreground);font-size:11px;font-weight:650;white-space:nowrap}.audit-object-id{font-size:12px;color:var(--muted-foreground);white-space:nowrap}.audit-event>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--foreground);font-size:13px}.audit-open-link{display:grid;place-items:center;width:24px;height:24px;margin-left:auto;border-radius:6px;color:var(--primary);text-decoration:none}.audit-open-link:hover,.audit-open-link:focus-visible{background:var(--accent);outline:none}.audit-diff{border-top:1px solid var(--border);padding-top:10px}.audit-diff summary{cursor:pointer;width:max-content;max-width:100%;color:var(--primary);font-size:12px;font-weight:600;list-style:none}.audit-diff summary::-webkit-details-marker{display:none}.audit-diff summary::before{content:'›';display:inline-block;margin-right:6px;transform:rotate(0deg);transition:transform .15s ease}.audit-diff[open] summary::before{transform:rotate(90deg)}.audit-diff dl{display:grid;gap:9px;margin:12px 0 0}.audit-diff dl>div{display:grid;grid-template-columns:145px minmax(0,1fr);gap:12px;padding:10px;border-radius:8px;background:color-mix(in srgb,var(--secondary) 65%,transparent)}.audit-diff dt{overflow-wrap:anywhere;color:var(--muted-foreground);font-size:12px}.audit-diff dd{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;margin:0}.audit-diff dd span{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere;color:var(--foreground);font-size:12px;line-height:1.55}.audit-diff dd small{font-size:10px;color:var(--muted-foreground)}.audit-trimmed{margin:9px 0 0;color:var(--muted-foreground);font-size:11px}.audit-more{display:flex;justify-content:center;align-items:center;min-height:52px;color:var(--muted-foreground);font-size:12px}.audit-empty{margin-top:18px}
+.audit-page{max-width:1240px;margin:0 auto;padding-bottom:42px}.audit-heading{align-items:flex-start}.audit-heading>.btn{margin-top:4px}.audit-filters{display:grid;gap:16px;padding:18px 20px;margin-bottom:16px;border:1px solid var(--border);background:var(--card)}.audit-filter-title{display:grid;gap:4px}.audit-filter-title b{font-size:14px;color:var(--foreground)}.audit-filter-title small{font-size:12px;line-height:1.65;color:var(--muted-foreground)}.audit-filter-grid{display:grid;grid-template-columns:minmax(138px,.8fr) minmax(170px,1.25fr) minmax(150px,1fr) minmax(140px,.82fr) minmax(140px,.82fr) auto;gap:10px;align-items:end}.audit-filter-grid label{display:grid;gap:6px;min-width:0;font-size:12px;color:var(--muted-foreground)}.audit-filter-grid input{width:100%;min-width:0;height:36px;padding:7px 10px;border:1px solid var(--input);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:12px}.audit-filter-grid input:focus-visible{outline:2px solid color-mix(in srgb,var(--ring) 55%,transparent);outline-offset:1px;border-color:var(--ring)}.audit-object-select{width:100%;min-width:0}.audit-object-select :deep(.app-select-trigger){width:100%}.audit-filter-actions{display:flex;gap:8px;align-items:center;min-height:36px;white-space:nowrap}.audit-error{margin-bottom:16px}.audit-stream{display:grid;gap:10px}.audit-count{margin:3px 0 0;color:var(--muted-foreground);font-size:12px}.audit-entry{border:1px solid var(--border);border-radius:12px;background:var(--card);padding:16px 18px;box-shadow:0 1px 2px color-mix(in srgb,var(--foreground) 5%,transparent)}.audit-entry-head{display:flex;align-items:center;justify-content:space-between;gap:14px}.audit-identity{display:flex;align-items:center;gap:9px;min-width:0}.audit-avatar{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:9px;background:color-mix(in srgb,var(--primary) 12%,var(--card));color:var(--primary);font-size:13px;font-weight:700}.audit-identity div{display:grid;gap:2px;min-width:0}.audit-identity b{font-size:13px;color:var(--foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.audit-identity small,.audit-entry time{font-size:11px;color:var(--muted-foreground)}.audit-event{display:flex;align-items:center;gap:7px;min-width:0;margin:13px 0 10px}.audit-object{padding:3px 7px;border-radius:6px;background:var(--secondary);color:var(--secondary-foreground);font-size:11px;font-weight:650;white-space:nowrap}.audit-object-id{font-size:12px;color:var(--muted-foreground);white-space:nowrap}.audit-event>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--foreground);font-size:13px}.audit-open-link{display:grid;place-items:center;width:24px;height:24px;margin-left:auto;border-radius:6px;color:var(--primary);text-decoration:none}.audit-open-link:hover,.audit-open-link:focus-visible{background:var(--accent);outline:none}.audit-diff,.audit-trace{border-top:1px solid var(--border);padding-top:10px}.audit-diff summary,.audit-trace summary{cursor:pointer;width:max-content;max-width:100%;color:var(--primary);font-size:12px;font-weight:600;list-style:none}.audit-diff summary::-webkit-details-marker,.audit-trace summary::-webkit-details-marker{display:none}.audit-diff summary::before,.audit-trace summary::before{content:'›';display:inline-block;margin-right:6px;transform:rotate(0deg);transition:transform .15s ease}.audit-diff[open] summary::before,.audit-trace[open] summary::before{transform:rotate(90deg)}.audit-diff dl{display:grid;gap:9px;margin:12px 0 0}.audit-diff dl>div{display:grid;grid-template-columns:145px minmax(0,1fr);gap:12px;padding:10px;border-radius:8px;background:color-mix(in srgb,var(--secondary) 65%,transparent)}.audit-diff dt{overflow-wrap:anywhere;color:var(--muted-foreground);font-size:12px}.audit-diff dd{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;margin:0}.audit-diff dd span{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere;color:var(--foreground);font-size:12px;line-height:1.55}.audit-diff dd small{font-size:10px;color:var(--muted-foreground)}.audit-trace{margin-top:10px}.audit-trace p{display:flex;flex-wrap:wrap;gap:6px 14px;margin:10px 0 0;color:var(--muted-foreground);font-size:11px;line-height:1.6}.audit-trace code{padding:1px 4px;border-radius:4px;background:var(--secondary);color:var(--secondary-foreground);font:inherit;overflow-wrap:anywhere}.audit-trimmed{margin:9px 0 0;color:var(--muted-foreground);font-size:11px}.audit-more{display:flex;justify-content:center;align-items:center;min-height:52px;color:var(--muted-foreground);font-size:12px}.audit-empty{margin-top:18px}
 @media(max-width:1080px){.audit-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.audit-filter-actions{grid-column:span 3}}
 @media(max-width:760px){.audit-page{padding:16px 12px 32px}.audit-heading{gap:12px}.audit-heading>.btn{width:100%}.audit-filters{padding:14px;margin-inline:0}.audit-filter-grid{grid-template-columns:1fr 1fr}.audit-filter-grid label:first-of-type{grid-column:span 2}.audit-filter-actions{grid-column:span 2;display:grid;grid-template-columns:1fr 1fr}.audit-filter-actions .btn{min-height:40px}.audit-entry{padding:14px}.audit-entry-head{align-items:flex-start}.audit-entry time{white-space:nowrap;padding-top:3px}.audit-event{flex-wrap:wrap}.audit-event>b{flex:1 1 calc(100% - 104px);white-space:normal;overflow:visible}.audit-open-link{margin-left:0}.audit-diff dl>div{grid-template-columns:1fr;gap:7px}.audit-diff dd{grid-template-columns:1fr}.audit-diff dd span{padding:7px 8px;border-radius:6px;background:var(--card)}}
 </style>

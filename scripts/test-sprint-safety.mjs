@@ -30,12 +30,19 @@ let count=0
 async function test(name,run){await run();count++;console.log('✓ '+name)}
 await test('column writes are single-flight and a late initial read cannot overwrite newly saved preferences',async()=>{const readPending=deferred(),writePending=deferred(),m=mount((path,options)=>options?.method==='PATCH'?writePending.promise:readPending.promise);const reading=m.loadColumns();const saving=m.saveColumns(['code','title','priority']);await m.saveColumns(['code','title','status']);await m.loadColumns();assert.equal(m.calls.length,2);writePending.resolve({});await saving;readPending.resolve({columns:['code','title','status']});await reading;assert.deepEqual(m.listColumns.value,['code','title','priority']);assert.equal(m.columnsSaving.value,false);m.stop()})
 await test('iteration-wide preference saves do not close another newly opened columns panel',async()=>{let oldClosed=0,newClosed=0;const pending=deferred(),m=mount(()=>pending.promise);m.columnPanel.value={close:()=>oldClosed++};const draft=['code','title','priority'],saving=m.saveColumns(draft);draft.push('status');m.columnPanel.value={close:()=>newClosed++};m.selected.value=detail(2);pending.resolve({});await saving;assert.deepEqual(m.listColumns.value,['code','title','priority']);assert.equal(newClosed,0);assert.equal(oldClosed,0);m.stop()})
-await test('project scope changes block old preference submissions and ignore pending responses',async()=>{const pending=deferred(),m=mount(()=>pending.promise);const saving=m.saveColumns(['code','title','priority']);assert.equal(m.calls[0].options.headers['X-DevFlow-Project'],'p-original');m.storage.set('devflow-project','p-new');m.listColumns.value=['code','title','status'];await m.saveColumns(['code']);pending.resolve({});await saving;assert.equal(m.calls.length,1);assert.deepEqual(m.listColumns.value,['code','title','status']);m.stop()})
+await test('project scope changes block old preference submissions and ignore pending responses',async()=>{const pending=deferred(),m=mount(()=>pending.promise);const saving=m.saveColumns(['code','title','priority']);assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'],'p-original');m.storage.set('devflow-project','p-new');m.listColumns.value=['code','title','status'];await m.saveColumns(['code']);pending.resolve({});await saving;assert.equal(m.calls.length,1);assert.deepEqual(m.listColumns.value,['code','title','status']);m.stop()})
 await test('unmounted pages cannot apply a late preference read or launch follow-up requests',async()=>{const pending=deferred(),m=mount(()=>pending.promise);const reading=m.loadColumns();m.listColumns.value=['code','title','priority'];m.stop();pending.resolve({columns:['code','title','status']});await reading;assert.deepEqual(m.listColumns.value,['code','title','priority']);await m.loadColumns();assert.equal(m.calls.length,1)})
 await test('new iteration columns place creation time after title while saved choices stay intact',async()=>{
  const fresh=mount();await fresh.loadColumns();assert.deepEqual(fresh.listColumns.value.slice(0,3),['code','title','createdAt']);fresh.stop()
  for(const columns of [['code','title','priority'],['code','title','priority','createdAt'],['code','title']]){
   const saved=mount(async()=>({columns}));await saved.loadColumns();assert.deepEqual(saved.listColumns.value,columns);saved.stop()
  }
+})
+await test('iteration list defaults to requirement-first ordering and renders distinct type badges',async()=>{
+ const source=read('src/views/Sprints.vue')
+ assert.match(source,/listSort=ref\('objectType'\),listOrder=ref\('asc'\)/)
+ assert.match(source,/\['work-item-type','work-item-type-'\+x\.objectType\]/)
+ assert.match(source,/\.work-item-type-requirement\{[^}]*#2563eb/)
+ assert.match(source,/\.work-item-type-defect\{[^}]*#c2410c/)
 })
 console.log(`Passed ${count} sprint draft and request-scope safety tests.`)

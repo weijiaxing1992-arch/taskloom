@@ -3,15 +3,15 @@ import { t } from '../i18n'
 import Icon from './Icon.vue'
 defineProps<{ unread: number }>()
 const links = [
-  { to: '/my-work', label: '我的工作', icon: 'work' },
-  { to: '/search', label: '全局搜索', icon: 'search' },
-  { to: '/notifications', label: '通知中心', icon: 'bell' },
-  { to: '/projects', label: '项目空间', icon: 'projects' },
+  { to: '/my-work', label: '我的', ariaLabel: '我的工作', icon: 'work' },
+  { to: '/requirements', label: '需求', ariaLabel: '需求列表', icon: 'list' },
+  { to: '/iterations', label: '迭代', ariaLabel: '迭代列表', icon: 'review' },
+  { to: '/notifications', label: '通知', ariaLabel: '通知中心', icon: 'bell' },
 ]
 </script>
 <template>
   <nav class="mobile-work-navigation" :aria-label="t('常用工作入口')">
-    <RouterLink v-for="link in links" :key="link.to" :to="link.to" :aria-label="t(link.label)+(link.to==='/notifications'&&unread?' · '+unread:'')">
+    <RouterLink v-for="link in links" :key="link.to" :to="link.to" :aria-label="t(link.ariaLabel)+(link.to==='/notifications'&&unread?' · '+unread:'')">
       <span class="mobile-work-icon"><Icon :name="link.icon" :size="20"/><small v-if="link.to==='/notifications'&&unread">{{unread>99?'99+':unread}}</small></span>
       <span>{{t(link.label)}}</span>
     </RouterLink>

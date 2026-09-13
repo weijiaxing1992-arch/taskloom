@@ -53,7 +53,10 @@ func (a *App) readRequirementExport(ctx context.Context, store stateStore, root 
 	requirementIDs := exportIDs(b.data["requirements"], "id")
 	load("requirementComments", "comments", "t.requirement_id IN (SELECT value FROM json_each(?))", requirementIDs)
 	load("checklists", "checklist_items", "t.requirement_id IN (SELECT value FROM json_each(?))", requirementIDs)
-	load("requirementActivities", "activities", "t.requirement_id IN (SELECT value FROM json_each(?))", requirementIDs)
+	query("requirementActivities", `SELECT a.id,a.requirement_id,a.actor,a.event,a.detail,a.created_at,COALESCE(h.actor_id,'') AS actor_id,COALESCE(u.name,'') AS actor_name,h.before_json,h.after_json,COALESCE(h.iteration_delay,0) AS iteration_delay,h.source_audit_id FROM activities a LEFT JOIN requirement_activity_history h ON h.activity_id=a.id AND h.tenant_id=a.tenant_id AND h.project_id=a.project_id AND h.requirement_id=a.requirement_id LEFT JOIN users u ON u.tenant_id=a.tenant_id AND u.id=CASE WHEN COALESCE(h.actor_id,'')<>'' THEN h.actor_id ELSE a.actor END WHERE a.tenant_id=? AND a.project_id=? AND a.requirement_id IN (SELECT value FROM json_each(?)) ORDER BY a.id`, tenantID, a.pid(), requirementIDs)
+	if err == nil {
+		err = enrichRequirementExportHistory(b)
+	}
 	load("requirementAttachments", "requirement_attachments", "t.requirement_id IN (SELECT value FROM json_each(?))", requirementIDs)
 	load("designLinks", "requirement_design_links", "t.requirement_id IN (SELECT value FROM json_each(?))", requirementIDs)
 	load("testingDesigns", "testing_designs", "t.requirement_id IN (SELECT value FROM json_each(?))", requirementIDs)
@@ -121,7 +124,7 @@ func (a *App) readRequirementExport(ctx context.Context, store stateStore, root 
 		}
 		row["category"], row["language"] = resolveAttachmentAsset(fmt.Sprint(row["name"]), fmt.Sprint(row["category"]), sample)
 		row["downloadUrl"] = fmt.Sprintf("/api/requirements/%d/attachments/%d", row["requirementId"], row["id"])
-		row["downloadHeaders"] = map[string]string{"X-DevFlow-Project": a.pid()}
+		row["downloadHeaders"] = map[string]string{"X-TaskLoom-Project": a.pid()}
 	}
 	for _, row := range b.data["legacyAttachmentMetadata"] {
 		row["downloadUrl"] = nil
@@ -132,6 +135,7 @@ func (a *App) readRequirementExport(ctx context.Context, store stateStore, root 
 	if err = a.enrichRequirementExport(ctx, store, b); err != nil {
 		return out, err
 	}
+	normalizeRequirementExportCodes(b.data)
 	counts := map[string]int{}
 	for section, items := range b.data {
 		counts[section] = len(items)
@@ -140,6 +144,45 @@ func (a *App) readRequirementExport(ctx context.Context, store stateStore, root 
 	out.Completeness = map[string]any{"status": "complete", "truncated": false, "scope": "authorized_requirement_tree_and_linked_test_records", "auditIncluded": auditAllowed, "counts": counts, "limits": map[string]int{"requirements": limits.Requirements, "rows": limits.Rows, "bytes": limits.Bytes}, "excludedCategories": []string{"unauthorized or cross-tenant records", "private drafts and private AI review caches", "credentials and robot configuration", "attachment binary contents", "unrelated cases/executions from shared test plans"}, "notes": []string{"所有纳入需求、用例、计划、执行、缺陷的公开评论和回复完整导出，未使用展示分页。", "测试计划本体和讨论完整；testPlanCases/testExecutions 仅包含所选用例，不代表计划全部测试范围。", "树外相关需求只提供摘要；跨项目依赖只提供双方有权读取的关系摘要。", "审计仅在现有项目审计权限允许时导出，敏感字段仍会脱敏。", "历史附件表没有受支持的下载接口时只输出元数据，不伪造下载地址。"}}
 	out.Data = b.data
 	return out, nil
+}
+
+// Export the same public history as the detail endpoint, in the caller's single
+// read snapshot. A batch join avoids an extra query for every exported child.
+func enrichRequirementExportHistory(b *requirementExportReader) error {
+	groups := map[int64][]requirementHistoryItem{}
+	rowsByID := map[int64]map[string]any{}
+	for _, row := range b.data["requirementActivities"] {
+		id := row["id"].(int64)
+		before, beforeOK := row["before"].(map[string]any)
+		after, afterOK := row["after"].(map[string]any)
+		x := requirementHistoryItem{ID: id, Actor: fmt.Sprint(row["actor"]), ActorID: fmt.Sprint(row["actorId"]), ActorName: fmt.Sprint(row["actorName"]), Event: fmt.Sprint(row["event"]), Detail: fmt.Sprint(row["detail"]), CreatedAt: fmt.Sprint(row["createdAt"]), SnapshotAvailable: beforeOK && afterOK, Recovered: row["sourceAuditId"] != nil, IterationDelay: row["iterationDelay"] == int64(1)}
+		populateRequirementHistory(&x, before, after)
+		parent := row["requirementId"].(int64)
+		groups[parent] = append(groups[parent], x)
+		rowsByID[id] = row
+	}
+	for _, items := range groups {
+		orderRequirementHistory(items)
+		for _, item := range items {
+			row := rowsByID[item.ID]
+			previous, _ := json.Marshal(row)
+			delete(row, "before")
+			delete(row, "after")
+			delete(row, "sourceAuditId")
+			row["sprint"], row["status"], row["changes"] = item.Sprint, item.Status, item.Changes
+			row["snapshotAvailable"], row["recovered"] = item.SnapshotAvailable, item.Recovered
+			row["iterationDelay"], row["iterationDelayCount"] = item.IterationDelay, item.IterationDelayCount
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				return err
+			}
+			b.bytes += len(encoded) - len(previous)
+			if b.bytes > b.limits.Bytes {
+				return errRequirementExportBudget
+			}
+		}
+	}
+	return nil
 }
 
 func validateRequirementExportTree(items []map[string]any) error {

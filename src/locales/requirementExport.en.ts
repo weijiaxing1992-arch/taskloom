@@ -1,6 +1,7 @@
 export default {
   '选择需求导出格式': 'Choose requirement export format',
   '导出需求': 'Export requirement',
+  '导出匹配需求': 'Export matching requirements',
   '导出完整 JSON': 'Export complete JSON',
   '导出完整 Markdown': 'Export complete Markdown',
   '便于阅读和打印': 'For reading and printing',

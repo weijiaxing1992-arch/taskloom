@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import WechatBinding from '../components/WechatBinding.vue'
+import WecomAppBinding from '../components/WecomAppBinding.vue'
 import { api } from '../api'
 import Icon from '../components/Icon.vue'
 import SidebarCollapseButton from '../components/SidebarCollapseButton.vue'
@@ -16,14 +17,17 @@ const tabs = [
   { id: 'security', label: '账号安全', icon: 'shield' },
   { id: 'preferences', label: '偏好设置', icon: 'preferences' },
   { id: 'wecom', label: '企微通知', icon: 'bell' },
+  { id: 'wecom-app', label: '企业微信绑定', icon: 'shield' },
   { id: 'wechat', label: '微信绑定', icon: 'shield' },
 ]
 const colors = ['#665FE8', '#3478F6', '#12A594', '#E17B2D', '#D84C6F', '#7357B8']
 const roleNames: Record<string, string> = { tenant_admin: '企业管理员', project_admin: '项目管理员', product: '产品', frontend: '前端', backend: '后端', algorithm: '算法', ui: 'UI 设计', frontend_lead: '前端组长', backend_lead: '后端组长', qa: '测试', viewer: '只读成员', member: '企业成员' }
+function profileProjectRoleNames(membership:{projectRoles?:string[];role:string}){return (membership.projectRoles??[membership.role]).map(role=>t(roleNames[role]||role)).join(' / ')}
 
 const route = useRoute()
-const activeTab = ref(route.query.tab==='wechat'?'wechat':'basic')
+const activeTab = ref(route.query.tab==='wechat'||route.query.tab==='wecom-app'?String(route.query.tab):'basic')
 const wechatEditor=ref<InstanceType<typeof WechatBinding>|null>(null)
+const wecomAppEditor=ref<InstanceType<typeof WecomAppBinding>|null>(null)
 const profileSidebarExpanded=useLayoutBoolean('profile.sidebar',true)
 const webhookEditor=ref<InstanceType<typeof UserWecomWebhook>|null>(null),webhookBusy=ref(false)
 const profile = ref<any>(null)
@@ -92,7 +96,7 @@ async function changePassword() {
   } finally { passwordSaving.value = false }
 }
 
-function canLeave(){return !saving.value&&!passwordSaving.value&&(wechatEditor.value?.canLeave()??true)&&(webhookEditor.value?.canLeave()??true)}
+function canLeave(){return !saving.value&&!passwordSaving.value&&(wechatEditor.value?.canLeave()??true)&&(wecomAppEditor.value?.canLeave()??true)&&(webhookEditor.value?.canLeave()??true)}
 function switchTab(value: string) { if(value===activeTab.value||!canLeave())return;activeTab.value = value; message.value = '' }
 onBeforeRouteLeave(canLeave);onBeforeRouteUpdate(canLeave)
 watch(locale, value => { form.locale = value })
@@ -163,8 +167,9 @@ onMounted(load)
           </form>
         </article>
 
-        <article v-else-if="activeTab==='wechat'" class="profile-panel"><WechatBinding ref="wechatEditor"/></article>
+        <article v-else-if="activeTab==='wechat'" class="profile-panel profile-wechat-panel"><WechatBinding ref="wechatEditor"/></article>
         <article v-else-if="activeTab==='wecom'" class="profile-panel profile-wecom-panel"><UserWecomWebhook ref="webhookEditor" @busy="webhookBusy=$event"/></article>
+        <article v-else-if="activeTab==='wecom-app'" class="profile-panel profile-wecom-app-panel"><WecomAppBinding ref="wecomAppEditor"/></article>
         <article v-else class="profile-panel preferences-panel">
           <header><div><h2>{{ t('偏好设置') }}</h2><p>{{ t('调整界面语言、时间显示和协作消息接收方式。') }}</p></div><span class="profile-section-mark"><Icon name="preferences" :size="20" /></span></header>
           <form class="preferences-form" @submit.prevent="saveProfile('偏好设置已保存')">
@@ -173,7 +178,7 @@ onMounted(load)
             <label><div><b>{{ t('界面语言') }}</b><p>{{ t('用于菜单、操作提示和系统消息。') }}</p></div><select v-model="form.locale"><option value="zh-CN">{{ t('简体中文') }}</option><option value="en-US">English</option></select></label>
             <label><div><b>{{ t('时区') }}</b><p>{{ t('影响活动记录、通知和计划时间的显示。') }}</p></div><select v-model="form.timezone"><option value="Asia/Shanghai">{{ t('中国标准时间（上海）') }}</option><option value="Asia/Hong_Kong">{{ t('香港时间') }}</option><option value="Asia/Singapore">{{ t('新加坡时间') }}</option><option value="UTC">{{ t('协调世界时（UTC）') }}</option></select></label>
             <label class="preference-toggle"><div><b>{{ t('邮件通知') }}</b><p>{{ t('邮件投递尚未接入；此处仅保存偏好。站内通知不受影响。') }}</p></div><input v-model="form.emailNotifications" type="checkbox" role="switch" :aria-label="t('邮件通知')"><span></span></label>
-            <section class="membership-section"><div><b>{{ t('参与的项目') }}</b><p>{{ t('项目角色由企业或项目管理员配置。') }}</p></div><article v-for="membership in profile.memberships" :key="membership.projectId"><span>{{ membership.projectName.slice(0, 1) }}</span><div><b>{{ membership.projectName }}</b><small>{{ membership.projectCode }}</small></div><em>{{ t(roleNames[membership.role] || membership.role) }}</em></article></section>
+            <section class="membership-section"><div><b>{{ t('参与的项目') }}</b><p>{{ t('项目角色由企业或项目管理员配置。') }}</p></div><article v-for="membership in profile.memberships" :key="membership.projectId"><span>{{ membership.projectName.slice(0, 1) }}</span><div><b>{{ membership.projectName }}</b><small>{{ membership.projectCode }}</small></div><em>{{ profileProjectRoleNames(membership) }}</em></article></section>
             <footer><span>{{ t('偏好会跟随账号同步') }}</span><button class="btn primary" :disabled="saving">{{ t(saving ? '保存中…' : '保存偏好设置') }}</button></footer>
           </form>
         </article>
@@ -186,9 +191,9 @@ onMounted(load)
 <style scoped>
 .profile-sidebar{position:relative;transition:width .16s ease,min-width .16s ease,padding .16s ease}.profile-sidebar>:deep(.sidebar-collapse-toggle){position:absolute;right:10px;top:10px;z-index:2}.profile-sidebar.is-collapsed{width:50px;min-width:50px;padding:12px}.profile-sidebar.is-collapsed>:deep(.sidebar-collapse-toggle){position:static;margin:auto}.profile-sidebar-content{display:contents}
 /* 企微组件同时嵌入成员弹层和个人中心；外层卡片负责留白，组件内部负责表格横向滚动。 */
-.profile-wecom-panel{padding:24px;min-width:0;max-width:100%;box-sizing:border-box}
+.profile-wecom-panel,.profile-wechat-panel,.profile-wecom-app-panel{padding:24px;min-width:0;max-width:100%;box-sizing:border-box}
 @media(max-width:820px){
- .profile-wecom-panel{padding:16px}
+ .profile-wecom-panel,.profile-wechat-panel,.profile-wecom-app-panel{padding:16px}
  .profile-shell{display:flex;flex-direction:column;gap:16px;align-items:stretch}
  .profile-sidebar{position:static;width:100%;min-width:0}.profile-identity{display:grid;grid-template-columns:52px minmax(0,1fr);gap:3px 12px;padding:16px;text-align:left}
  .profile-sidebar.is-collapsed{width:100%;min-width:0;padding:9px}.profile-sidebar.is-collapsed>:deep(.sidebar-collapse-toggle){margin-left:auto}

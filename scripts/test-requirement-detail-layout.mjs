@@ -33,6 +33,8 @@ function find(node,predicate){
 const named=(node,name)=>find(node,value=>value.type?.name===name)
 const hasClass=(node,name)=>find(node,value=>typeof value.props?.class==='string'&&value.props.class.split(' ').includes(name))
 const css=compileStyle({source:descriptor.styles.map(style=>style.content).join('\n'),filename:'Requirements.vue',id:'detail-layout'}).rawResult.root
+const glassCSS=read('src/glass-system.css'),glassStyle=compileStyle({source:glassCSS,filename:'glass-system.css',id:'detail-layout-glass',scoped:false})
+assert.deepEqual(glassStyle.errors,[])
 function declaration(selector,property,value){let found=false;css.walkRules(rule=>{if(rule.selector===selector)rule.walkDecls(property,decl=>{if(decl.value===value)found=true})});assert(found,`${selector} must set ${property}: ${value}`)}
 let count=0
 async function test(name,run){await run();count++;console.log('✓ '+name)}
@@ -67,6 +69,26 @@ await test('field styles constrain each actual control instead of masking a fixe
  declaration('.detail-props :deep(.option-checks label), .detail-props :deep(.custom-fields > label.check)','display','flex')
  declaration('.detail-props :deep(input[type=checkbox])','width','auto')
  let covering=false;css.walkRules(rule=>{if(rule.selector.includes('.detail-props'))rule.walkDecls('position',decl=>{if(decl.value==='absolute')covering=true})});assert.equal(covering,false,'fields must never overlay the document at intermediate widths')
+})
+await test('detail navigation keeps long labels inside the drawer and exposes their full text without growing the column',()=>{
+  const template=descriptor.template.content
+  assert.match(template,/:title="t\(tab\.label\)"/)
+  assert.match(template,/:title="t\(tab\.label\|\|tab\.name\)"/)
+  declaration('.detail-navigation','min-width','0');declaration('.detail-navigation','max-width','100%');declaration('.detail-navigation','overflow-x','hidden')
+  declaration('.detail-navigation button','min-width','0');declaration('.detail-navigation button','max-width','100%');declaration('.detail-navigation button','white-space','nowrap')
+  declaration('.detail-navigation button > span','min-width','0');declaration('.detail-navigation button > span','overflow','hidden');declaration('.detail-navigation button > span','text-overflow','ellipsis');declaration('.detail-navigation button > span','white-space','nowrap')
+ const narrow=css.nodes.find(node=>node.type==='atrule'&&node.name==='container'&&node.params==='requirement-detail (max-width: 820px)');assert(narrow)
+ const rules=Object.fromEntries(narrow.nodes.filter(node=>node.type==='rule').map(rule=>[rule.selector,Object.fromEntries(rule.nodes.filter(node=>node.type==='decl').map(decl=>[decl.prop,decl.value]))]))
+ assert.equal(rules['.detail-navigation button']['white-space'],'nowrap');assert.equal(rules['.detail-navigation button > span']['text-overflow'],'ellipsis')
+})
+await test('route entrance motion never creates a containing block that clips fixed drawers behind the rail',()=>{
+  let keyframes
+  glassStyle.rawResult.root.walkAtRules('keyframes',rule=>{if(rule.params==='glass-page-in')keyframes=rule})
+  assert(keyframes,'glass-page-in keyframes must exist')
+  let transforms=0
+  keyframes.walkDecls('transform',()=>{transforms++})
+  assert.equal(transforms,0,'route entry animation must not transform a router root with fixed overlays')
+  assert.match(glassCSS,/\.app-shell \.workspace > main > \*\s*\{\s*animation: glass-page-in/)
 })
 await test('narrow detail has one component-owned vertical scroll chain and all scoped CSS compiles',()=>{
  const narrow=css.nodes.find(node=>node.type==='atrule'&&node.name==='container'&&node.params==='requirement-detail (max-width: 820px)');assert(narrow)

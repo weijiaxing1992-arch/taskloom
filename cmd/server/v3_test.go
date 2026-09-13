@@ -12,7 +12,7 @@ import (
 func apiRequest(a *App, method, path, user, project, body string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-DevFlow-Project", project)
+	r.Header.Set("X-TaskLoom-Project", project)
 	cookieWriter := httptest.NewRecorder()
 	cookie, err := a.issueSession(cookieWriter, r, user)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestCORSAllowsProjectContextHeader(t *testing.T) {
 	r := httptest.NewRequest(http.MethodOptions, "/api/requirements", nil)
 	w := httptest.NewRecorder()
 	withJSON(a.scopedAPI()).ServeHTTP(w, r)
-	if w.Code != http.StatusNoContent || !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "X-DevFlow-Project") || strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "X-DevFlow-User") {
+	if w.Code != http.StatusNoContent || !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "X-TaskLoom-Project") || strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "X-TaskLoom-User") {
 		t.Fatalf("project context header missing from CORS preflight: %d %q", w.Code, w.Header().Get("Access-Control-Allow-Headers"))
 	}
 }

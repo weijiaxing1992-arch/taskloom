@@ -6,6 +6,7 @@ import * as Pinia from 'pinia'
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 function evaluate(source, imports = {}, globals = {}) { const exports = {}; new Function('require', 'exports', ...Object.keys(globals), ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(id => imports[id] || {}, exports, ...Object.values(globals)); return exports }
 const helpers = evaluate(read('src/topSearch.ts')), storeModule = evaluate(read('src/stores/workspace.ts'), { vue: Vue, pinia: Pinia }, { localStorage: { getItem: () => 'p' } })
+const recentSearches = evaluate(read('src/recentSearches.ts'))
 const result = (id = 7, extra = {}) => ({ id, type: '需求', title: 'Original user title ' + id, code: 'REQ-' + id, projectId: 'p', projectName: 'Product project', status: '规划中', snippet: 'Untranslated user content', ...extra })
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 const flush = async () => { for (let i = 0; i < 8; i++) { await Promise.resolve(); await Vue.nextTick() } }
@@ -13,7 +14,8 @@ function fixture(handler = async () => ({ items: [result()], total: 1 }), naviga
  const scope = Vue.effectScope(), store = storeModule.useWorkspaceStore(Pinia.createPinia()), props = Vue.reactive({ disabled: false }), route = Vue.reactive({ path: '/iterations', fullPath: '/iterations?sprint=22', query: { sprint: '22', tab: 'list' } }), calls = [], navigations = [], unmount = [], mounted = [], timers = new Map(), events = new EventTarget(), document = new EventTarget(); let timerID = 0
  store.acceptContext({ session: { tenant: { id: 't', name: 'Team' }, user: { id: 'me', name: 'Me', role: 'product' }, project: { id: 'p', name: 'Product project', code: 'P' } }, projects: [{ id: 'p', name: 'Product project' }], unread: 0 })
  const imports = { vue: { ...Vue, useId: () => 'test', onMounted: fn => mounted.push(fn), onBeforeUnmount: fn => unmount.push(fn) }, 'vue-router': { useRoute: () => route, useRouter: () => ({ push: async target => { navigations.push(target); return navigation(target) } }) }, '../stores/workspace': { useWorkspaceStore: () => store }, '../topSearch': helpers, '../api': { api: async (path, options) => { calls.push({ path, options }); return handler(path, options) } }, '../i18n': { t: value => value } }
- const source = read('src/components/TopSearch.vue').match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1], exposed = 'root,input,query,opened,items,total,loading,error,searched,activeIndex,navigating,composing,focus,openPopup,search,schedule,close,clear,choose,more,keydown,pointerdown,available'
+ imports['../recentSearches'] = recentSearches
+ const source = read('src/components/TopSearch.vue').match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1], exposed = 'root,input,query,opened,items,total,loading,error,searched,activeIndex,recentIndex,recentQueries,navigating,composing,focus,openPopup,search,schedule,close,clear,choose,more,keydown,pointerdown,available'
  const m = scope.run(() => evaluate(source + '\nexport {' + exposed + '}', imports, { defineProps: () => props, defineExpose() {}, window: events, document, setTimeout: fn => { timers.set(++timerID, fn); return timerID }, clearTimeout: id => timers.delete(id) }))
  mounted.forEach(fn => fn())
  return { ...m, props, store, route, calls, navigations, events, timers, async runTimers() { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(fn => fn()); await flush() }, stop() { unmount.forEach(fn => fn()); scope.stop(); store.$dispose() } }
@@ -23,7 +25,7 @@ let count = 0; async function test(name, run) { await run(); count++; console.lo
 await test('focusing opens a dropdown without navigation or an empty broad search; typing is debounced and scope is explicit', async () => {
  const m = fixture(); m.input.value = { focus() {}, closest: () => null }; assert.equal(await m.focus(), true); assert.equal(m.opened.value, true); assert.equal(m.calls.length, 0); assert.equal(m.navigations.length, 0)
  m.query.value = 'alpha'; m.query.value = 'beta'; assert.equal(m.calls.length, 0); assert.equal(m.timers.size, 1); await m.runTimers()
- const params = new URL(m.calls[0].path, 'https://local.test').searchParams; assert.equal(params.get('q'), 'beta'); assert.equal(params.get('project'), 'p'); assert.equal(params.get('limit'), '12'); assert.equal(m.calls[0].options.headers['X-DevFlow-Project'], 'p'); assert.equal(m.items.value.length, 1); m.stop()
+ const params = new URL(m.calls[0].path, 'https://local.test').searchParams; assert.equal(params.get('q'), 'beta'); assert.equal(params.get('project'), 'p'); assert.equal(params.get('limit'), '12'); assert.equal(m.calls[0].options.headers['X-TaskLoom-Project'], 'p'); assert.equal(m.items.value.length, 1); m.stop()
 })
 await test('superseded searches abort their request and a late old response never replaces newer results', async () => {
  const old = deferred(), m = fixture(path => path.includes('alpha') ? old.promise : Promise.resolve({ items: [result(8)], total: 1 }))
@@ -66,6 +68,19 @@ await test('project, identity, disabled-account and unmount transitions erase te
    assert.equal(m.query.value, ''); assert.equal(m.items.value.length, 0); assert.equal(m.opened.value, false); assert.equal(signal.aborted, true)
    pending.resolve({ items: [result()], total: 1 }); await flush(); assert.equal(m.items.value.length, 0); if (transition !== 'unmount') m.stop()
  }
+})
+await test('recent searches support keyboard selection and one immediate request without navigating', async () => {
+ const m=fixture();m.openPopup();m.recentQueries.value=['alpha','beta'];m.keydown(keyboard('ArrowDown'));assert.equal(m.recentIndex.value,0);m.keydown(keyboard('ArrowDown'));assert.equal(m.recentIndex.value,1)
+ m.keydown({...keyboard('Enter'),isComposing:true});await flush();assert.equal(m.calls.length,0)
+ m.keydown(keyboard('Enter'));await flush();assert.equal(m.query.value,'beta');assert.equal(m.calls.length,1);assert.equal(m.timers.size,0);assert.equal(m.navigations.length,0);assert.equal(m.items.value[0].id,7);m.stop()
+})
+await test('result summaries use canonical requirement codes and preserve custom status names and source data',()=>{
+ const original=result(7,{statusName:'开发中',statusSystem:false,statusColor:'#123456'}),copy=structuredClone(original),item=helpers.searchItemsInProject([original],'p')[0]
+ assert.equal(item.statusColor,'#123456');assert.equal(helpers.searchItemsInProject([result(8,{statusColor:'url(https://invalid.test)'})],'p')[0].statusColor,undefined)
+ assert.match(read('src/components/TopSearch.vue'),/:style="workflowStyle\(item\)"/)
+ assert.equal(helpers.searchDisplayCode(item),'000007');assert.equal(helpers.searchDisplayCode(result(8,{type:'缺陷',code:'BUG-0008'})),'BUG-0008');assert.equal(helpers.searchDisplayCode(result(1000000,{code:'HISTORIC'})),'HISTORIC')
+ assert.equal(helpers.searchStatusLabel(item,key=>'translated:'+key),'开发中');assert.equal(helpers.searchStatusLabel({...item,statusSystem:true},key=>'translated:'+key),'translated:开发中');assert.deepEqual(original,copy)
+ const source=read('src/components/TopSearch.vue');assert.match(source,/searchStatusLabel\(item,t\)/);assert.match(source,/searchDisplayCode\(item\)/);assert.match(source,/role="option" :aria-selected="recentIndex===index"/)
 })
 await test('the widget stays inside the App inert boundary, exposes focus and does not inherit the retired link styling', () => {
  const source = read('src/components/TopSearch.vue'); assert(!source.includes('Teleport')); assert.match(source, /class="top-search-widget"/); assert(!source.includes('class="top-search"')); assert.match(source, /closest\('\[inert\],\[hidden\]'\)/); assert.match(source, /defineExpose\(\{focus\}\)/); assert.match(source, /:has\(\.top-search-widget\[data-open="true"\]\)/)

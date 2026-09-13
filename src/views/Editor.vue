@@ -6,6 +6,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { useLayoutBoolean } from '../layoutScope'
+import { memberHasProjectRole } from '../memberRoles'
 import CustomFieldInputs from '../components/CustomFieldInputs.vue'
 import AppSelect from '../components/AppSelect.vue'
 import DatePicker from '../components/DatePicker.vue'
@@ -23,7 +24,7 @@ import WorkItemPdfExport from '../components/WorkItemPdfExport.vue'
 import { normalizeMentionIds, retainMentionIds, unavailableNewMentionIds } from '../mentions'
 import { emptyRoleWeights, normalizeRoleWeights, normalizeSprints, roleWeightDefinitions, splitTags, sprintSelectable, validTagColor, type RequirementMember, type RequirementSprint, type RequirementTagOption } from '../requirementFields'
 
-const props = defineProps<{ embedded?: boolean; parentId?: number; requirementId?: number; restoreId?: string }>()
+const props = defineProps<{ embedded?: boolean; parentId?: number; requirementId?: number; restoreId?: string; initialSprint?: string }>()
 const emit = defineEmits<{ (event: 'created', requirement: any, again: boolean): void; (event: 'saved', requirement: any): void; (event: 'cancel'): void }>()
 const refinementBusy=ref(false)
 const route = useRoute(), router = useRouter()
@@ -42,8 +43,10 @@ const currentUserId=ref(''), tagOptions=ref<RequirementTagOption[]>([]), tagErro
 const members = ref<RequirementMember[]>([]), sprints = ref<RequirementSprint[]>([]), parents = ref<any[]>([]), categories = ref<{ id: number; name: string; count?: number }[]>([])
 const editingID = computed(() => props.embedded ? props.requirementId : route.params.id)
 const edit = computed(() => !!editingID.value)
+const creatingChild = computed(() => Number.isSafeInteger(Number(props.parentId)) && Number(props.parentId) > 0)
 // 新建先收录诉求；切换展开状态只改变布局，保留所有字段及私有草稿。
 const moreFields = useLayoutBoolean('requirement-editor.more-fields', false)
+const peopleExpanded = useLayoutBoolean('requirement-editor.people-development', true)
 const expanded = computed(() => edit.value || moreFields.value)
 const parentContext = ref<any>(null)
 const formElement = ref<HTMLFormElement | null>(null)
@@ -68,13 +71,13 @@ function applyRequirementTemplate(value:any,replace:boolean){
   for(const {key,roles} of roleWeightDefinitions){
    const next=incoming[key],current=f.roleWeights[key]
    if(next.value!==null&&(replace||current.value===null))current.value=next.value
-   const ids=(next.userIds||[]).filter((id:string)=>members.value.some(m=>m.id===id&&m.active!==false&&roles.includes(m.projectRole||m.role||'')))
+   const ids=(next.userIds||[]).filter((id:string)=>members.value.some(m=>m.id===id&&m.active!==false&&memberHasProjectRole(m,roles)))
    if(ids.length&&(replace||!current.userIds?.length)){current.userIds=ids;current.userId=ids[0]}
   }
  }
- const owners=(value.ownerUserIds||[]).filter((id:string)=>members.value.some(m=>m.id===id&&m.active!==false&&(m.projectRole||m.role)==='product'))
+ const owners=(value.ownerUserIds||[]).filter((id:string)=>members.value.some(m=>m.id===id&&m.active!==false&&memberHasProjectRole(m,['product'])))
  if(owners.length&&(replace||!f.ownerUserIds?.length)){f.ownerUserIds=owners;ownersTouched.value=true}
- const testers=(value.testerUserIds||[]).filter((id:string)=>members.value.some(m=>m.id===id&&m.active!==false&&(m.projectRole||m.role)==='qa'))
+ const testers=(value.testerUserIds||[]).filter((id:string)=>members.value.some(m=>m.id===id&&m.active!==false&&memberHasProjectRole(m,['qa'])))
  if(testers.length&&(replace||!f.customFields.testers?.length))f.customFields.testers=testers
  if(value.acceptance||value.remarks||value.roleWeights||owners.length||testers.length)moreFields.value=true
  notice.value='模板已填入当前草稿，请检查后保存需求'
@@ -125,7 +128,7 @@ async function load() {
   titleAssistant.value?.cancel();titleGenerating.value=false;canConfigureAI.value=false
   const sequence = ++loadSequence, embedded = !!props.embedded, requirementID = editingID.value
   const requestedParent = embedded ? props.parentId : typeof route.query.parentId === 'string' ? route.query.parentId : ''
-  const requestedSprint = !embedded && typeof route.query.sprint === 'string' ? route.query.sprint : ''
+  const requestedSprint = props.initialSprint || (!embedded && typeof route.query.sprint === 'string' ? route.query.sprint : '')
   const current = () => !disposed && sequence === loadSequence && embedded === !!props.embedded && requirementID === editingID.value && (!embedded || requestedParent === props.parentId)
   initialized.value = false; loading.value = true; error.value = ''; notice.value = ''
   parentContext.value = null; loadedProject = ''
@@ -136,7 +139,7 @@ async function load() {
     const [session, workflow] = await Promise.all([api<any>('/session'),api<any>('/requirement-workflow'), refreshReferences()])
     if (!current()) return
     loadedProject = session.project?.id || ''
-    const options = loadedProject ? { headers: { 'X-DevFlow-Project': loadedProject } } : undefined
+    const options = loadedProject ? { headers: { 'X-TaskLoom-Project': loadedProject } } : undefined
     canEdit.value = !!session.user?.role && session.user.role !== 'viewer'
     currentUserId.value=session.user?.id||''
     canConfigureAI.value=session.canImpersonate===true&&!session.impersonation
@@ -150,7 +153,7 @@ async function load() {
     } else {
       f.status=workflow.initialStatus
       const parentId=Number(requestedParent)
-      if(embedded || requestedParent){
+      if(requestedParent){
         if(!Number.isSafeInteger(parentId)||parentId<1)throw new Error('父需求无效，请返回需求详情重新创建')
         const parent=await api<any>('/requirements/'+parentId, options)
         if(!current())return
@@ -207,7 +210,7 @@ const unload = (event: BeforeUnloadEvent) => { if (dirty.value||descriptionMedia
 const refreshOnFocus = () => { if (initialized.value && !saving.value) void refreshReferences() }
 onMounted(() => { void load(); window.addEventListener('beforeunload', unload); window.addEventListener('focus', refreshOnFocus) })
 onBeforeUnmount(() => { disposed = true; resolveLeave?.(false);resolveLeave=null;leavePending=null;leaveDialog.value?.close();descriptionFullscreen.value=false; loadSequence++; window.removeEventListener('beforeunload', unload); window.removeEventListener('focus', refreshOnFocus) })
-watch([() => !!props.embedded, editingID, () => props.embedded ? props.parentId : route.query.parentId], () => { descriptionFullscreen.value=false; void load() })
+watch([() => !!props.embedded, editingID, () => props.embedded ? props.parentId : route.query.parentId, () => props.initialSprint], () => { descriptionFullscreen.value=false; void load() })
 
 function applyRefinement(value:{description:string;acceptance:string}){
  if(saving.value||loading.value||!canEdit.value)return
@@ -262,6 +265,7 @@ async function save(again = false, draft = false) {
   if (!formElement.value?.checkValidity()) {
     // 必填字段可能位于折叠区，先展开再聚焦，避免浏览器报“不可聚焦”。
     moreFields.value = true
+    peopleExpanded.value = true
     await nextTick()
     formElement.value?.querySelectorAll?.('details').forEach(element => { element.open = true })
     formElement.value?.reportValidity()
@@ -273,7 +277,7 @@ async function save(again = false, draft = false) {
   if (unavailableNewMentionIds(descriptionIDs, members.value, savedDescriptionMentionIds.value).length || unavailableNewMentionIds(remarksIDs, members.value, savedRemarksMentionIds.value).length) { error.value = '新增提及成员暂不可用，请刷新项目成员或移除后重选'; return }
   for (const row of roleWeightDefinitions) {
     const value = f.roleWeights[row.key]?.value
-    if (value !== null && value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1000000)) { error.value = '{field}需为 0 至 1000000 的有效数值'; invalidWeightField.value = row.label; return }
+    if (value !== null && value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1000000)) { error.value = '{field}需为 0 至 1000000 的有效数值'; invalidWeightField.value = row.label; moreFields.value = true; peopleExpanded.value = true; return }
   }
   const payload: Record<string, any> = {}
   for (const key of ['type', 'title', 'description', 'acceptance', 'parentId', 'category', 'sprint', 'status', 'priority', 'tags', 'tagColors', 'remarks', 'roleWeights', 'startDate', 'endDate', 'sensitive', 'authImpact', 'customFields']) payload[key] = f[key]
@@ -284,13 +288,13 @@ async function save(again = false, draft = false) {
   payload.title = f.title.trim(); payload.tags = splitTags(f.tags).join(',')
   payload.tagColors = Object.fromEntries(splitTags(f.tags).map(tag => [tag, validTagColor(f.tagColors[tag])]))
   payload.roleWeights = normalizeRoleWeights(f.roleWeights)
-  if (props.embedded && !edit.value) payload.parentId = props.parentId
+  if (props.embedded && creatingChild.value && !edit.value) payload.parentId = props.parentId
   if (!edit.value) delete payload.status // 初始状态由服务器在事务中决定；私有草稿不会走正式创建接口。
   const sequence = loadSequence, embedded = !!props.embedded, parentId = props.parentId, requirementID = editingID.value, projectId = loadedProject
   const current = () => !disposed && sequence === loadSequence && embedded === !!props.embedded && requirementID === editingID.value && (!embedded || parentId === props.parentId)
   saving.value = true
   try {
-    const saved = await api<any>(requirementID ? '/requirements/' + requirementID : '/requirements', { method: requirementID ? 'PATCH' : 'POST', body: JSON.stringify(payload), headers: projectId ? { 'X-DevFlow-Project': projectId } : undefined })
+    const saved = await api<any>(requirementID ? '/requirements/' + requirementID : '/requirements', { method: requirementID ? 'PATCH' : 'POST', body: JSON.stringify(payload), headers: projectId ? { 'X-TaskLoom-Project': projectId } : undefined })
     if (!current()) return
     if (saved.descriptionDoc !== undefined) f.descriptionDoc = saved.descriptionDoc
     // 只有正式接口成功后才清理对应草稿；清理失败不能被误报为需求保存失败而诱发重复创建。
@@ -308,14 +312,14 @@ async function save(again = false, draft = false) {
       if (embedded) { if (requirementID) emit('saved', saved); else emit('created', saved, false) }
       else { navigatingAfterSave = true; await router.push('/requirements') }
     }
-  } catch (cause: any) { if (current()) { error.value = cause.message || '保存失败，请重试'; moreFields.value = true; await nextTick(); if (current()) formElement.value?.querySelectorAll?.('details').forEach(element=>{element.open=true}) } }
+  } catch (cause: any) { if (current()) { error.value = cause.message || '保存失败，请重试'; moreFields.value = true; peopleExpanded.value = true; await nextTick(); if (current()) formElement.value?.querySelectorAll?.('details').forEach(element=>{element.open=true}) } }
   finally { navigatingAfterSave = false; if (!disposed) saving.value = false }
 }
 </script>
 
 <template>
   <form ref="formElement" class="editor requirement-editor" :class="{ 'embedded-editor': props.embedded }" novalidate @submit.prevent="save()">
-    <header class="editor-head"><div class="editor-titlebar"><h1>{{ props.embedded ? t('创建子需求') : edit ? t('编辑需求') : t('创建需求') }}</h1><span>{{ t('编辑内容会自动保存为私有草稿') }}</span></div><div class="editor-head-actions"><WorkItemPdfExport v-if="edit&&initialized&&!loading&&loadedProject" object-type="requirement" :object-id="Number(editingID)" :project-id="loadedProject" :disabled="saving||draftSaving"/><WorkItemDrafts ref="draftRecovery" compact kind="requirement" :target-id="edit?String(editingID):''" :context="draftContext" :payload="draftPayload" :ready="initialized&&canEdit&&!loading" :dirty="dirty" :busy="saving||descriptionMediaBusy||refinementBusy||titleGenerating" :restore-id="requestedDraftId" @restore="restoreDraft" /><button type="button" class="btn ghost" :disabled="saving" @click="requestClose">{{ t('取消') }}</button></div></header>
+    <header class="editor-head"><div class="editor-titlebar"><h1>{{ creatingChild ? t('创建子需求') : edit ? t('编辑需求') : t('创建需求') }}</h1><span>{{ t('编辑内容会自动保存为私有草稿') }}</span></div><div class="editor-head-actions"><WorkItemPdfExport v-if="edit&&initialized&&!loading&&loadedProject" object-type="requirement" :object-id="Number(editingID)" :project-id="loadedProject" :disabled="saving||draftSaving"/><WorkItemDrafts ref="draftRecovery" compact kind="requirement" :target-id="edit?String(editingID):''" :context="draftContext" :payload="draftPayload" :ready="initialized&&canEdit&&!loading" :dirty="dirty" :busy="saving||descriptionMediaBusy||refinementBusy||titleGenerating" :restore-id="requestedDraftId" @restore="restoreDraft" /><button type="button" class="btn ghost" :disabled="saving" @click="requestClose">{{ t('取消') }}</button></div></header>
     <div v-if="loading" class="state"><span class="spinner"></span>{{ t('正在载入需求与当前项目…') }}</div>
     <div v-else-if="!initialized" class="state error"><p>{{ errorText }}</p><div><button type="button" class="btn" @click="load">{{ t('重新载入') }}</button> <button type="button" class="btn" @click="requestClose">{{ props.embedded ? t('取消') : t('返回需求列表') }}</button></div></div>
     <div v-else-if="!canEdit" class="state"><h2>{{ t('当前账号为只读身份') }}</h2><p>{{ t('可以浏览需求与评估信息，创建或编辑需要项目写入权限。') }}</p><div><button type="button" class="btn" @click="props.embedded ? requestClose() : router.push(edit ? '/requirements?req=' + route.params.id : '/requirements')">{{ props.embedded ? t('取消') : edit ? t('查看需求详情') : t('返回需求列表') }}</button></div></div>
@@ -323,7 +327,7 @@ async function save(again = false, draft = false) {
       <div v-if="error" class="editor-alert error-alert" role="alert">{{ errorText }}</div><div v-if="notice" class="editor-alert success-alert" role="status">{{ t(notice) }}</div>
       <div v-if="referenceError" class="editor-alert error-alert" role="alert">{{ t(referenceError) }} <button type="button" @click="refreshReferences">{{ t('重试载入项目数据') }}</button></div>
       <div v-if="!edit" class="capture-toolbar"><span>{{ t('先记录要解决的问题，评估与排期可稍后补充') }}</span><label v-if="!expanded" for="quick-priority">{{ t('优先级') }}</label><select v-if="!expanded" id="quick-priority" v-model="f.priority" :disabled="saving"><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select><button type="button" class="btn compact" :disabled="saving" :aria-expanded="expanded" @click="moreFields=!moreFields">{{ t(expanded?'收起更多信息':'展开更多信息') }}</button></div>
-      <ResizableSplit class="editor-split" :show-aside="expanded" :label="t('调整字段区宽度')" :project-id="loadedProject" :scene="props.embedded ? (edit ? 'editor.embedded-edit' : 'editor.child') : edit ? 'editor.edit' : 'editor.new'" :initial-width="380" :min-main-width="360" :min-aside-width="300" :max-aside-width="640" :breakpoint="820" :disabled="saving">
+      <ResizableSplit class="editor-split" :show-aside="expanded" :label="t('调整字段区宽度')" :project-id="loadedProject" :scene="props.embedded ? (edit ? 'editor.embedded-edit' : creatingChild ? 'editor.child' : 'editor.drawer') : edit ? 'editor.edit' : 'editor.new'" :initial-width="380" :min-main-width="360" :min-aside-width="300" :max-aside-width="640" :breakpoint="820" :disabled="saving">
        <template #main>
         <section class="editor-main">
           <RequirementTemplates :members="members" :current-user-id="currentUserId" :context-key="currentUserId+':'+loadedProject" :disabled="saving||descriptionMediaBusy||refinementBusy||titleGenerating" @apply="applyRequirementTemplate" />
@@ -337,26 +341,31 @@ async function save(again = false, draft = false) {
           <div v-show="expanded" class="capture-details">
           <RequirementRefinement :description="f.description" :acceptance="f.acceptance" :requirement-id="edit?Number(editingID):undefined" :disabled="saving||descriptionMediaBusy||loading||!canEdit" @apply="applyRefinement" @busy="refinementBusy=$event"/><RequirementSuggestions :description="f.description" :acceptance="f.acceptance" />
           <label for="requirement-acceptance">{{ t('验收标准') }}</label><textarea id="requirement-acceptance" v-model="f.acceptance" :disabled="saving" rows="5" :placeholder="t('请写出可验证、可测试的完成条件')"></textarea>
-          <div class="section-heading weights-heading"><span>02</span><div><h2>{{ t('职能权重评估') }}</h2><p>{{ t('按职能绑定人员并手动填写数值，自动汇总整条需求的难度。') }}</p></div></div>
-          <RequirementWeights v-model="f.roleWeights" :members="members" :current-user-id="currentUserId" :disabled="saving" />
           <label for="requirement-remarks">{{ t('备注') }}</label><MentionComment mode="field" input-id="requirement-remarks" v-model="f.remarks" v-model:mentionUserIds="f.remarksMentionUserIds" v-model:mentionNames="f.remarksMentionNames" :saved-mention-user-ids="savedRemarksMentionIds" :members="members" :disabled="saving" :label="t('备注')" :rows="4" :maxlength="10000" :placeholder="t('补充依赖、风险或协作约定，输入 @ 选择成员')"/>
           </div>
         </section>
        </template>
        <template #aside>
         <aside class="property-panel">
-          <h3>{{ t('计划与负责人') }}</h3>
+          <h3>{{ t('计划与优先级') }}</h3>
           <label for="requirement-parent">{{ t('父需求') }}</label><select id="requirement-parent" v-model="f.parentId" :disabled="props.embedded || saving || referencesLoading"><option :value="null">{{ t('无父需求') }}</option><option v-for="parent in parentOptions" :key="parent.id" :value="parent.id">{{ parent.code }} · {{ parent.title }}</option></select>
           <label for="requirement-category">{{ t('分类') }}</label><select id="requirement-category" v-model="f.category" :disabled="saving"><option v-for="category in categoryOptions" :key="category" :value="category">{{ categoryLabel(category) }}</option></select>
           <div class="property-label"><label for="requirement-sprint">{{ t('所属迭代') }}</label><button type="button" :disabled="referencesLoading || saving" @click="refreshReferences">{{ referencesLoading ? t('刷新中…') : t('刷新迭代') }}</button></div><select id="requirement-sprint" v-model="f.sprint" :disabled="saving" @focus="refreshOnFocus"><option value="待规划">{{ t('待规划') }}</option><option v-if="missingSprint" :value="f.sprint" disabled>{{ f.sprint }} {{ t('· 原关联，当前不可用') }}</option><option v-for="sprint in availableSprints" :key="sprint.id" :value="sprint.name" :disabled="!sprintSelectable(sprint)">{{ sprint.name }} · {{ t(sprint.status==='进行中'?'当前进行中':sprint.status) }}</option></select>
           <p v-if="historicalSprint || missingSprint" class="property-hint warning-hint">{{ t('保留原迭代关系；若要调整，请选择规划中或进行中的迭代。') }}</p><p v-else class="property-hint">{{ t('与当前项目迭代池同步，切回页面时自动刷新。') }}</p>
-          <div class="priority-value-row"><div><label for="requirement-priority">{{ t('优先级') }}</label><select id="requirement-priority" v-model="f.priority" :disabled="saving"><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></div><div class="business-value-field"><CustomFieldInputs object-type="requirement" v-model="f.customFields" :visible-keys="['business_value']" @validity-change="editorDatesValid.business=$event" /></div></div>
-          <label for="requirement-assignee">{{ t('处理人') }}</label><MemberMultiSelect input-id="requirement-assignee" v-model="f.assigneeUserIds" @update:modelValue="assigneesTouched=true" :members="members" :snapshots="f.assignees" :legacy-name="!assigneesTouched&&!savedAssigneeIds.length?f.assignee:''" :current-user-id="currentUserId" :disabled="saving || referencesLoading" :label="t('处理人')"/>
-          <div class="tester-field"><CustomFieldInputs object-type="requirement" v-model="f.customFields" :visible-keys="['testers']" @validity-change="editorDatesValid.testers=$event" /></div>
+          <div class="priority-value-row"><div><label for="requirement-priority">{{ t('优先级') }}</label><select id="requirement-priority" v-model="f.priority" :disabled="saving"><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></div><div class="business-value-field"><CustomFieldInputs :disabled="saving||!canEdit" object-type="requirement" v-model="f.customFields" :visible-keys="['business_value']" @validity-change="editorDatesValid.business=$event" /></div></div>
           <div class="two"><div><label for="requirement-start">{{ t('计划开始') }}</label><DatePicker id="requirement-start" v-model="f.startDate" @validity-change="editorDatesValid.start=$event" :label="t('计划开始')" :disabled="saving" /></div><div><label for="requirement-end">{{ t('计划结束') }}</label><DatePicker id="requirement-end" v-model="f.endDate" @validity-change="editorDatesValid.end=$event" :label="t('计划结束')" :min="f.startDate || undefined" :disabled="saving" /></div></div>
+          <section class="property-section people-development">
+            <button type="button" class="people-development-toggle" :aria-expanded="peopleExpanded" aria-controls="requirement-people-development" @click="peopleExpanded=!peopleExpanded"><strong>{{ t('人员与开发评估') }}</strong><span>{{ t(peopleExpanded?'收起':'展开') }}</span></button>
+            <div v-show="peopleExpanded" id="requirement-people-development">
+              <label for="requirement-assignee">{{ t('处理人') }}</label><MemberMultiSelect input-id="requirement-assignee" v-model="f.assigneeUserIds" @update:modelValue="assigneesTouched=true" :members="members" :snapshots="f.assignees" :legacy-name="!assigneesTouched&&!savedAssigneeIds.length?f.assignee:''" :current-user-id="currentUserId" :disabled="saving || referencesLoading" :label="t('处理人')"/>
+              <fieldset class="custom-field-lock" :disabled="saving"><CustomFieldInputs :disabled="saving||!canEdit" object-type="requirement" v-model="f.customFields" :visible-keys="['testers']" @validity-change="editorDatesValid.testers=$event" /></fieldset>
+              <RequirementWeights compact v-model="f.roleWeights" :members="members" :current-user-id="currentUserId" :disabled="saving || referencesLoading" />
+              <fieldset class="custom-field-lock" :disabled="saving"><CustomFieldInputs :disabled="saving||!canEdit" object-type="requirement" v-model="f.customFields" :visible-types="['user','users','number']" :excluded-keys="['testers','business_value','customer_type']" :excluded-names="['客户类型','11']" /></fieldset>
+            </div>
+          </section>
           <div class="property-section"><h3>{{ t('彩色标签') }}</h3><RequirementTags v-model="f.tags" v-model:colors="f.tagColors" :options="tagOptions" :disabled="saving" /><p v-if="tagError" class="property-hint warning-hint">{{t(tagError)}} <button type="button" class="link" @click="loadTags">{{t('重试')}}</button></p></div>
           <div class="property-section"><h3>{{ t('合规检查') }}</h3><label class="check"><input v-model="f.sensitive" type="checkbox" :disabled="saving">{{ t('涉及敏感数据') }}</label><label class="check"><input v-model="f.authImpact" type="checkbox" :disabled="saving">{{ t('涉及权限认证') }}</label></div>
-          <details class="property-section custom-fields-section"><summary>{{ t('更多字段') }}</summary><fieldset class="custom-field-lock" :disabled="saving"><CustomFieldInputs object-type="requirement" v-model="f.customFields" :excluded-keys="['business_value','testers','customer_type']" :excluded-names="['客户类型','11']" @validity-change="editorDatesValid.custom=$event" /></fieldset></details>
+          <details class="property-section custom-fields-section"><summary>{{ t('更多字段') }}</summary><fieldset class="custom-field-lock" :disabled="saving"><CustomFieldInputs :disabled="saving||!canEdit" object-type="requirement" v-model="f.customFields" :excluded-keys="['business_value','testers','customer_type']" :excluded-names="['客户类型','11']" :excluded-types="['user','users','number']" @validity-change="editorDatesValid.custom=$event" /></fieldset></details>
           <div class="property-section creation-meta"><span>{{ t('创建时间') }}</span><time>{{ edit ? formatCreatedAt(f.createdAt) : t('创建成功后自动记录') }}</time></div>
         </aside>
        </template>
@@ -372,6 +381,7 @@ async function save(again = false, draft = false) {
 </template>
 
 <style scoped>
+.people-development{min-width:0}.people-development-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-width:0;min-height:36px;margin:0 0 8px;padding:0;border:0;background:transparent;color:var(--foreground);text-align:left;font:inherit}.people-development-toggle span{color:var(--muted-foreground);font-size:12px}.people-development-toggle strong{font-size:13px}.people-development :deep(.requirement-weights){margin-top:16px}
 .editor-leave-dialog{width:min(480px,calc(100vw - 32px));box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:20px;color:var(--text);background:var(--surface)}.editor-leave-dialog::backdrop{background:#11182766}.editor-leave-dialog h2{font-size:16px}.editor-leave-dialog p{font-size:13px;line-height:1.7}.editor-leave-dialog>div{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
 .title-duplicates{font-size:var(--ui-font-caption,12px);color:var(--warning-text,#9b681b);line-height:1.7}.title-duplicates a{display:inline-block;margin-right:8px;color:var(--primary)}
 /* 分栏及滚动由 ResizableSplit 按容器控制；字段本身必须可收缩，不能仅靠裁切掩盖溢出。 */

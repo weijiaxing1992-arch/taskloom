@@ -21,7 +21,7 @@ function fixture(handler = async () => ({ items: [] })) {
   const window = { confirm() { confirmations++; throw Error('Native dialogs are unavailable in this embedded browser') }, addEventListener: (event, fn) => events.set(event, fn), removeEventListener: event => events.delete(event) }
   const imports = { vue: { ...Vue, onMounted: () => {}, onBeforeUnmount: fn => unmounts.push(fn) }, 'vue-router': { onBeforeRouteLeave: () => {}, onBeforeRouteUpdate: () => {} }, '../organization': organization, '../i18n': { t: text => text, locale: Vue.ref('zh-CN') }, './settingsScope': { useSettingsScope: () => ({ locked: Vue.ref(false), project: 'p', current: () => true, request: async (path, options) => { calls.push({ path, options }); return handler(path, options) } }) } }
   const source = read('src/components/OrganizationMembers.vue').match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]
-  const names = 'open,close,save,opened,editing,form,baseline,dirty,memberDirty,discardMemberOpen,discardMemberPrompt,discardMemberChanges,keepMemberEditing,saving,importOpen,csv,impersonating,reason,error'
+  const names = 'open,close,save,opened,editing,form,baseline,dirty,memberDirty,discardMemberOpen,discardMemberPrompt,discardMemberChanges,keepMemberEditing,saving,importOpen,csv,impersonating,reason,error,showPassword'
   const value = effects.run(() => evaluate(source + '\nexport {' + names + '}', imports, { defineProps: () => props, defineEmits: () => (...args) => emitted.push(args), window, localStorage: { getItem: () => 'p' } }))
   return { ...value, calls, emitted, props, get confirmations() { return confirmations }, stop() { unmounts.forEach(fn => fn()); effects.stop() } }
 }
@@ -32,6 +32,10 @@ await test('untouched new-member dialog cancels before and after watchers settle
   const m = fixture()
   for (const settled of [false, true]) {
     m.open(); if (settled) await flush()
+    assert.equal(m.form.initialPassword,'');assert.equal(m.form.employeeNo,'');assert.equal(m.showPassword.value,false)
+    const markup=read('src/components/OrganizationMembers.vue')
+    assert.match(markup,/请为新成员设置独立临时密码，首次登录必须修改。/)
+    assert.match(markup,/:required="!editing"/)
     assert.equal(m.memberDirty.value, false); assert.equal(m.form.active, true); assert.deepEqual(m.form.departmentIds, [])
     m.close(); assert.equal(m.opened.value, false); assert.equal(m.discardMemberOpen.value, false)
   }

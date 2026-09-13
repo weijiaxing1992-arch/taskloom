@@ -45,7 +45,7 @@ function exportFixture(handler, provider) {
 await test('full-record export avoids per-requirement detail reads and preserves captured project and columns', async () => {
   const pending = deferred(), m = exportFixture(async () => ({ items: [] }), () => pending.promise)
   const operation = m.exportList(); m.props.projectId = 'later'; pending.resolve([row(8), row(2)]); await operation
-  assert.equal(m.calls.length, 2); assert(m.calls.every(call => call.options.headers['X-DevFlow-Project'] === 'p')); assert(!m.calls.some(call => /requirements\/\d/.test(call.path))); assert.equal(m.downloads.length, 1); const exported = JSON.parse(await m.downloads[0][0].text()); assert.deepEqual(exported.map(x => x.id), [8, 2]); assert.equal(m.busy.value, false); m.stop()
+  assert.equal(m.calls.length, 2); assert(m.calls.every(call => call.options.headers['X-TaskLoom-Project'] === 'p')); assert(!m.calls.some(call => /requirements\/\d/.test(call.path))); assert.equal(m.downloads.length, 1); const exported = JSON.parse(await m.downloads[0][0].text()); assert.deepEqual(exported.map(x => x.id), [8, 2]); assert.equal(m.busy.value, false); m.stop()
 })
 await test('cancel, unmount and identity invalidation discard late export results', async () => {
   for (const action of ['cancel', 'unmount', 'identity']) {

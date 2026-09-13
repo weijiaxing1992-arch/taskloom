@@ -244,7 +244,10 @@ func (a *App) requirementExport(w http.ResponseWriter, r *http.Request, id int64
 		extension, mime = "md", "text/markdown; charset=utf-8"
 	}
 	w.Header().Set("Content-Type", mime)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="REQ-%d-complete.%s"`, id, extension))
+	// Keep the downloaded artifact aligned with the number shown in the product;
+	// legacy REQ-* database values never leak into a newly generated filename.
+	filenameCode := requirementDisplayCode(id, strconv.FormatInt(id, 10))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-complete.%s"`, filenameCode, extension))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")

@@ -1,10 +1,12 @@
 export default {
+ '正在更新搜索结果…':'Updating search results…',
  '搜索内容、负责人、开发人员或部门':'Search content, owners, engineers or departments',
  '搜索标题、编号、负责人或部门':'Search title, ID, owner or department',
  '搜索内容、人员或部门…':'Search content, people or teams…',
  '输入标题、编号、负责人、开发人员或部门名称，即时查找相关事项。':'Find items by title, ID, owner, engineer or department name.',
  '搜索当前项目…':'Search this project…',
  '清空搜索':'Clear search',
+ '最近搜索':'Recent searches',
  '搜索建议':'Search suggestions',
  '共 {count} 条结果':'{count} results',
  '输入关键词，即时查找需求、缺陷、迭代与测试。':'Type to find requirements, defects, iterations and tests.',

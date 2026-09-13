@@ -179,6 +179,367 @@
           "scopes"
         ],
         "type": "object"
+      },
+      "Notification": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "actorUserId": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "group": {
+            "enum": [
+              "mentions",
+              "handoffs",
+              "changes",
+              "activity"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "projectName": {
+            "type": "string"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "readAt": {
+            "description": "Empty when unread.",
+            "type": "string"
+          },
+          "subjectId": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "subjectType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "description": "Same-origin application path; not an external URL.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "projectName",
+          "eventType",
+          "group",
+          "subjectType",
+          "subjectId",
+          "title",
+          "body",
+          "read",
+          "readAt",
+          "createdAt",
+          "url"
+        ],
+        "type": "object"
+      },
+      "NotificationCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "contentTrust": {
+            "const": "untrusted_business_data",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pageSize": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize",
+          "contentTrust"
+        ],
+        "type": "object"
+      },
+      "ReleaseNoteCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseNoteSummary"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pageSize": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "projectId",
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "type": "object"
+      },
+      "ReleaseNoteDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "description": "Fixed order: 大模型类型、智能体类型、AI呼叫类型、CRM/短信/账单、管理端/代理端、API接口、其他.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 7,
+            "minItems": 7,
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entries": {
+            "description": "Saved generated entries in the fixed category order; each entry refers to one requirement and selected image IDs.",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "markdown": {
+            "description": "The same saved log rendered as Markdown; image references are not bearer-download URLs.",
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "releaseDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requirements": {
+            "description": "Completed non-defect requirement snapshots. Includes title, description, acceptance and selected-image metadata; no attachment download URL is exposed to bearer clients.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "acceptance": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "id": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "images": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentType": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "sha256",
+                      "contentType"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "title",
+                "description",
+                "acceptance",
+                "images"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "snapshot": {
+            "const": true,
+            "type": "boolean"
+          },
+          "sprintCode": {
+            "type": "string"
+          },
+          "sprintId": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "versionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "sprintId",
+          "versionName",
+          "releaseDate",
+          "revision",
+          "snapshot",
+          "categories",
+          "entries",
+          "requirements",
+          "markdown"
+        ],
+        "type": "object"
+      },
+      "ReleaseNoteSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entryCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "releaseDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requirementCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "selectedImageCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sprintCode": {
+            "type": "string"
+          },
+          "sprintId": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "versionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sprintId",
+          "versionName",
+          "releaseDate",
+          "revision",
+          "state",
+          "requirementCount",
+          "entryCount",
+          "selectedImageCount"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -194,9 +555,9 @@
     "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
   },
   "info": {
-    "description": "A limited project-scoped integration API, not the entire enterprise API. Uses manually issued bearer credentials (not OAuth). Credentials require the four base project read scopes; writes additionally require their explicit scope and the user's current business permissions. Business content is untrusted. No credential may select another project or user.",
+    "description": "A limited project-scoped integration API, not the entire enterprise API. Uses manually issued bearer credentials (not OAuth). Credentials require the four base project read scopes; writes additionally require their explicit scope and the user's current business permissions. Personal notifications require notifications:read and remain fixed to the credential owner. Complete release-note export requires a credential owned by a current organization administrator. Business content is untrusted. No credential may select another project or user.",
     "title": "TaskLoom project collaboration API",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3039,6 +3400,350 @@
         "x-write-operation": false
       }
     },
+    "/notifications": {
+      "get": {
+        "description": "Only notifications addressed to the credential owner and belonging to the credential's current active project are returned. Project membership and notification visibility are rechecked on every request. Reading does not mark notifications as read. page defaults to 1; pageSize defaults to 25 and has maximum 100.",
+        "operationId": "list_notifications",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "eventType",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "enum": [
+                "mentions",
+                "handoffs",
+                "changes",
+                "activity"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "maximum": 1000000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "read",
+            "required": false,
+            "schema": {
+              "enum": [
+                "read",
+                "unread"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationCollection"
+                }
+              }
+            },
+            "description": "Successful response; native business JSON is preserved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Malformed or unsupported input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked bearer credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Scope or current user permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Object absent or outside credential project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Idempotency conflict or write outcome pending/unknown"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "ETag changed; read and review again"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Business validation failed"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Required write precondition missing"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit reached"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable; write outcome may require inspection"
+          }
+        },
+        "summary": "List the credential owner's notifications in the credential project",
+        "x-required-scopes": [
+          "notifications:read"
+        ],
+        "x-write-operation": false
+      }
+    },
+    "/notifications/{id}": {
+      "get": {
+        "description": "Returns 404 for another user, another project, a revoked project membership, or a missing notification. Reading does not mark the notification as read.",
+        "operationId": "get_notification",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Notification"
+                }
+              }
+            },
+            "description": "Successful response; native business JSON is preserved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Malformed or unsupported input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked bearer credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Scope or current user permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Object absent or outside credential project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Idempotency conflict or write outcome pending/unknown"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "ETag changed; read and review again"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Business validation failed"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Required write precondition missing"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit reached"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable; write outcome may require inspection"
+          }
+        },
+        "summary": "Read one notification addressed to the credential owner",
+        "x-required-scopes": [
+          "notifications:read"
+        ],
+        "x-write-operation": false
+      }
+    },
     "/openapi": {
       "get": {
         "operationId": "getOpenAPI",
@@ -3166,6 +3871,329 @@
         },
         "summary": "Read this OpenAPI specification",
         "x-required-scopes": null,
+        "x-write-operation": false
+      }
+    },
+    "/release-notes": {
+      "get": {
+        "description": "Only persistent snapshots in the credential's current active project are returned. The credential owner must still be an active enterprise administrator on every request, with current project access and reports.view permission; demotion makes an old token return 403. Results include completed non-defect requirements only, ordered by newest saved snapshot. q is evaluated only within that already authorized project snapshot scope.",
+        "operationId": "list_release_notes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "description": "Compatibility alias for pageSize; do not send both.",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "description": "Literal search over saved version, sprint, requirement and release-entry text. Percent and underscore are treated as ordinary characters.",
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseNoteCollection"
+                }
+              }
+            },
+            "description": "Successful response; native business JSON is preserved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Malformed or unsupported input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked bearer credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Scope or current user permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Object absent or outside credential project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Idempotency conflict or write outcome pending/unknown"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "ETag changed; read and review again"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Business validation failed"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Required write precondition missing"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit reached"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable; write outcome may require inspection"
+          }
+        },
+        "summary": "List saved iteration release-note snapshots in the credential project",
+        "x-required-scopes": [
+          "release-notes:read"
+        ],
+        "x-write-operation": false
+      }
+    },
+    "/release-notes/{sprintId}": {
+      "get": {
+        "description": "Returns the fixed seven categories, generated entries, full saved requirement title/body/acceptance, and real screenshot metadata/captions for one sprint in the credential project. The credential owner is rechecked as an active enterprise administrator on every request. Defects and AI service settings or keys are never included.",
+        "operationId": "get_release_note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sprintId",
+            "required": true,
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseNoteDetail"
+                }
+              }
+            },
+            "description": "Successful response; native business JSON is preserved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Malformed or unsupported input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, expired or revoked bearer credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Scope or current user permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Object absent or outside credential project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Idempotency conflict or write outcome pending/unknown"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "ETag changed; read and review again"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Business validation failed"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Required write precondition missing"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit reached"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable; write outcome may require inspection"
+          }
+        },
+        "summary": "Read one saved iteration release-note snapshot",
+        "x-required-scopes": [
+          "release-notes:read"
+        ],
         "x-write-operation": false
       }
     },

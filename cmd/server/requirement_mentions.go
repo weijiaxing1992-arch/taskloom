@@ -251,7 +251,15 @@ func (a *App) requirementComments(w http.ResponseWriter, r *http.Request, requir
 		err = a.auditRichDocument(tx, requirementID, comment.ID, comment.ContentDoc, comment.CreatedAt)
 	}
 	if err == nil {
-		_, err = tx.Exec(`INSERT INTO activities(tenant_id,project_id,requirement_id,actor,event,detail,created_at)VALUES(?,?,?,?,'commented','添加了评论',?)`, tenantID, a.pid(), requirementID, comment.Author, comment.CreatedAt)
+		var activity sql.Result
+		activity, err = tx.Exec(`INSERT INTO activities(tenant_id,project_id,requirement_id,actor,event,detail,created_at)VALUES(?,?,?,?,'commented','添加了评论',?)`, tenantID, a.pid(), requirementID, comment.Author, comment.CreatedAt)
+		if err == nil {
+			var activityID int64
+			activityID, err = activity.LastInsertId()
+			if err == nil {
+				err = a.recordRequirementRelatedHistory(tx, activityID, requirementID, "comment", nil, comment)
+			}
+		}
 	}
 	if err == nil {
 		_, err = tx.ExecContext(r.Context(), `INSERT INTO audit_logs(tenant_id,project_id,actor_id,object_type,object_id,action,after_json,created_at)VALUES(?,?,?,'requirement',?,'comment_created',?,?)`, tenantID, a.pid(), a.uid(), requirementID, jsonText(map[string]any{"commentId": comment.ID, "replyToId": comment.ReplyToID, "mentionUserIds": recipients}), comment.CreatedAt)

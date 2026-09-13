@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -55,6 +56,8 @@ func normalizeAITestGenerationOptions(focus []string, extra string, count *int) 
 		seen[item] = true
 		options.Focus = append(options.Focus, item)
 	}
+	// Checkbox order is not a change in intent or a reason for another charge.
+	sort.Strings(options.Focus)
 	options.ExtraInstructions = strings.TrimSpace(extra)
 	if !utf8.ValidString(options.ExtraInstructions) || strings.ContainsRune(options.ExtraInstructions, '\x00') || utf8.RuneCountInString(options.ExtraInstructions) > 1000 {
 		return options, orgInvalid("AI 补充说明格式不正确或过长")
@@ -84,10 +87,10 @@ func strictAIJSON(raw []byte, target any) error {
 // 仅发送需求标题/正文/验收标准；用户正文是数据，不是指令，不开放工具或附带评论、图片、人员信息。
 // 本函数只生成候选用例；权限预约、配置版本复核及人工确认导入由上层业务处理。
 func (a *App) generateAITestCases(ctx context.Context, key, model string, x Requirement) ([]aiTestCase, error) {
-	return a.generateAITestCasesWithOptions(ctx, key, model, x, defaultAITestGenerationOptions())
+	return a.generateAITestCasesWithOptions(ctx, key, model, aiDefaultBaseURL, x, defaultAITestGenerationOptions())
 }
 
-func (a *App) generateAITestCasesWithOptions(ctx context.Context, key, model string, x Requirement, options aiTestGenerationOptions) ([]aiTestCase, error) {
+func (a *App) generateAITestCasesWithOptions(ctx context.Context, key, model, baseURL string, x Requirement, options aiTestGenerationOptions) ([]aiTestCase, error) {
 	validated, err := normalizeAITestGenerationOptions(options.Focus, options.ExtraInstructions, &options.Count)
 	if err != nil {
 		return nil, err
@@ -109,23 +112,24 @@ func (a *App) generateAITestCasesWithOptions(ctx context.Context, key, model str
 	} else {
 		delete(payload, "reasoning")
 	}
+	payload["instructions"] = payload["instructions"].(string) + aiGroundingInstructions + " Each test must have concrete preconditions, executable actions and observable expected results grounded in the requirement. These are proposed tests, not executed tests. Put unresolved prerequisites or business decisions in preconditions and mark the corresponding expected result 待确认; never turn guesses into assertions. Prefer fewer distinct, supported cases over padding to the requested count. Avoid duplicate scenarios with reworded titles. Do not add performance, security or compatibility promises solely because a focus key was selected."
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-	// 请求 45 秒上限短于服务写超时 60 秒；固定官方地址且不跟随重定向，错误不透传 Key/上游正文。
+	// 使用与密钥、模型同时读取的地址；不会在外发前另取可能已经改变的配置。
 	requestCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, "POST", aiEndpoint, bytes.NewReader(data))
+	endpoint, client, err := a.aiRequestClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(requestCtx, "POST", endpoint, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
-	client := http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	if a.aiHTTP != nil {
-		client.Transport = a.aiHTTP.Transport
-	} // Tests inject only a transport; URL and redirect policy remain fixed.
 	resp, err := client.Do(req)
 	if err != nil {
 		if requestCtx.Err() != nil {
@@ -170,6 +174,9 @@ func (a *App) generateAITestCasesWithOptions(ctx context.Context, key, model str
 	}
 	// Decode to a provider-only shape so a hallucinated index/order cannot be
 	// trusted as the user's import selection or step ordering.
+	if aiOutputContainsKey(text, key) {
+		return nil, aiFailure(502, "ai_invalid_output", "AI 返回内容无效，请重新生成")
+	}
 	var result struct {
 		Cases []struct {
 			Title         string `json:"title"`
@@ -186,17 +193,25 @@ func (a *App) generateAITestCasesWithOptions(ctx context.Context, key, model str
 		return nil, aiFailure(502, "ai_invalid_output", "AI 返回内容无效，请重新生成")
 	}
 	out := []aiTestCase{}
-	for i, c := range result.Cases {
+	seenCases := map[string]bool{}
+	for _, c := range result.Cases {
 		if !validOrgText(strings.TrimSpace(c.Title), 1, 200) || utf8.RuneCountInString(c.Preconditions) > 4000 || len(c.StepsDetail) == 0 || len(c.StepsDetail) > 20 || !validChoice(c.Priority, []string{"P0", "P1", "P2", "P3"}) || !validChoice(c.CaseType, []string{"功能测试", "接口测试", "兼容性测试", "安全测试", "性能测试", "自动化测试"}) {
 			return nil, aiFailure(502, "ai_invalid_output", "AI 返回内容无效，请重新生成")
 		}
-		next := aiTestCase{Index: i, Title: strings.TrimSpace(c.Title), Preconditions: c.Preconditions, Priority: c.Priority, CaseType: c.CaseType, StepsDetail: []TestStep{}}
+		next := aiTestCase{Index: len(out), Title: strings.TrimSpace(c.Title), Preconditions: c.Preconditions, Priority: c.Priority, CaseType: c.CaseType, StepsDetail: []TestStep{}}
+		scenario := []string{strings.Join(strings.Fields(c.Preconditions), " ")}
 		for j, s := range c.StepsDetail {
 			if strings.TrimSpace(s.Action) == "" || strings.TrimSpace(s.Expected) == "" || utf8.RuneCountInString(s.Action) > 4000 || utf8.RuneCountInString(s.Expected) > 4000 {
 				return nil, aiFailure(502, "ai_invalid_output", "AI 返回内容无效，请重新生成")
 			}
 			next.StepsDetail = append(next.StepsDetail, TestStep{Order: j + 1, Action: s.Action, Expected: s.Expected})
+			scenario = append(scenario, strings.Join(strings.Fields(s.Action), " "), strings.Join(strings.Fields(s.Expected), " "))
 		}
+		fingerprint := jsonText(scenario)
+		if seenCases[fingerprint] {
+			continue
+		}
+		seenCases[fingerprint] = true
 		out = append(out, next)
 	}
 	if len(jsonText(out)) > 200000 {

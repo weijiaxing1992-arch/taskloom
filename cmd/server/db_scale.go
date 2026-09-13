@@ -280,6 +280,13 @@ func requirementQueryRecord(x Requirement, query *workItemQuery) (map[string]any
 				record[key] = x.ActualHours
 			case "weightTotal":
 				record[key] = x.WeightTotal
+			case "iterationDelayCount":
+				record[key] = x.IterationDelayCount
+			case "dependencyState":
+				// 普通列表不会计算依赖状态；仅计算过的查询才写入该字段。
+				if x.DependencyStatus != nil {
+					record[key] = x.DependencyStatus.State
+				}
 			case "startDate":
 				record[key] = x.StartDate
 			case "endDate":

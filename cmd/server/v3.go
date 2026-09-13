@@ -19,12 +19,16 @@ func (a *App) apiMux() http.Handler {
 	mux.HandleFunc("/api/exports/", a.exportPDF)
 	mux.HandleFunc("/api/dashboard", a.dashboard)
 	mux.HandleFunc("/api/project-health", a.projectHealthAPI)
+	mux.HandleFunc("/api/reports/release-notes", a.releaseNotesCenter)
+	mux.HandleFunc("/api/reports/release-notes/", a.releaseNotesCenter)
 	mux.HandleFunc("/api/drafts", a.privateDrafts)
 	mux.HandleFunc("/api/drafts/", a.privateDrafts)
 	mux.HandleFunc("/api/requirement-templates", a.requirementTemplates)
 	mux.HandleFunc("/api/requirement-templates/", a.requirementTemplates)
 	mux.HandleFunc("/api/ai/requirement-title", a.requirementAITitle)
 	mux.HandleFunc("/api/ai/requirement-refine", a.requirementAIRefine)
+	mux.HandleFunc("/api/ai/defect-refine", a.requirementAIRefine)
+	mux.HandleFunc("/api/requirement-shares", a.requirementShares)
 	mux.HandleFunc("/api/health", a.health)
 	mux.HandleFunc("/api/session", a.session)
 	mux.HandleFunc("/api/organization/directory", a.organizationDirectory)
@@ -121,6 +125,9 @@ func (a *App) scopedAPI() http.Handler {
 		case "/api/auth/wechat/callback":
 			a.wechatCallback(w, r)
 			return
+		case "/api/auth/wecom/callback":
+			a.wecomAppCallback(w, r)
+			return
 		}
 		if r.URL.Path == "/api/auth/logout" {
 			a.logout(w, r)
@@ -128,6 +135,10 @@ func (a *App) scopedAPI() http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/public/organization-invitations/") {
 			a.publicOrganizationInvitation(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/public/requirement-shares/") {
+			a.publicRequirementShare(w, r)
 			return
 		}
 		// 外部协作凭证走独立认证边界，不将 Bearer 扩展为管理后台 Cookie。
@@ -164,7 +175,14 @@ func (a *App) scopedAPI() http.Handler {
 		if impersonation != nil && !a.allowInitialPasswordRequest(w, r, principal, impersonation) {
 			return
 		}
-		if expected := r.Header.Get("X-DevFlow-Expected-User"); expected != "" && expected != principal.UserID {
+		// Only requests that have passed both the read-only delegation policy and
+		// the first-password gate reach this marker. Downstream read helpers use
+		// it to preserve the target's credential boundary without replacing the
+		// authorised review with the first-password screen.
+		if impersonation != nil && impersonation.ReadOnly {
+			r = r.WithContext(context.WithValue(r.Context(), readOnlyImpersonationRequestKey{}, true))
+		}
+		if expected := r.Header.Get("X-TaskLoom-Expected-User"); expected != "" && expected != principal.UserID {
 			fail(w, 409, "identity_changed", "账号身份已在其他页面切换，请刷新后继续")
 			return
 		}
@@ -203,15 +221,21 @@ func (a *App) scopedAPI() http.Handler {
 		}
 		// 企业能力（包含目录）不能依赖另一个浏览器标签碰巧选中的项目；目录本身
 		// 会再校验 organization.read，避免普通项目成员借项目上下文枚举全员信息。
-		if strings.HasPrefix(r.URL.Path, "/api/organization/") || strings.HasPrefix(r.URL.Path, "/api/profile/wechat") || r.URL.Path == "/api/profile/wecom-webhook" || r.URL.Path == "/api/reports/workload" || r.URL.Path == "/api/reports/workload/trends" {
+		if strings.HasPrefix(r.URL.Path, "/api/organization/") || strings.HasPrefix(r.URL.Path, "/api/profile/wechat") || strings.HasPrefix(r.URL.Path, "/api/profile/wecom-app") || r.URL.Path == "/api/profile/wecom-webhook" || r.URL.Path == "/api/reports/workload" || r.URL.Path == "/api/reports/workload/trends" || r.URL.Path == "/api/reports/workload/personal" || r.URL.Path == "/api/reports/workload/team" || r.URL.Path == "/api/reports/workload/iterations" {
 			scoped := *a
 			scoped.user, scoped.sessionToken, scoped.impersonation = principal.UserID, principal.TokenHash, impersonation
 			handler := scoped.organizationAdmin
 			if r.URL.Path == "/api/organization/wechat-login" {
 				handler = scoped.organizationWechat
 			}
+			if r.URL.Path == "/api/organization/wecom-app" {
+				handler = scoped.organizationWecomApp
+			}
 			if strings.HasPrefix(r.URL.Path, "/api/profile/wechat") {
 				handler = scoped.profileWechat
+			}
+			if strings.HasPrefix(r.URL.Path, "/api/profile/wecom-app") {
+				handler = scoped.profileWecomApp
 			}
 			if r.URL.Path == "/api/organization/directory" {
 				handler = scoped.organizationDirectory
@@ -228,6 +252,15 @@ func (a *App) scopedAPI() http.Handler {
 			if r.URL.Path == "/api/reports/workload/trends" {
 				handler = scoped.workloadTrends
 			}
+			if r.URL.Path == "/api/reports/workload/iterations" {
+				handler = scoped.workloadIterationAnalysis
+			}
+			if r.URL.Path == "/api/reports/workload/personal" {
+				handler = scoped.personalWorkloadReport
+			}
+			if r.URL.Path == "/api/reports/workload/team" {
+				handler = scoped.teamWorkloadReport
+			}
 			scoped.serveImpersonated(http.HandlerFunc(handler), w, r)
 			return
 		}
@@ -242,7 +275,19 @@ func (a *App) scopedAPI() http.Handler {
 			scoped.serveImpersonated(http.HandlerFunc(handler), w, r)
 			return
 		}
-		pid := r.Header.Get("X-DevFlow-Project")
+		// 个人收件箱按每条通知的项目鉴权，不依赖浏览器中可能已撤权的项目选择。
+		// 外发队列仍走下方项目/管理员鉴权，不能包含在此个人能力分支中。
+		if r.URL.Path == "/api/notifications" || strings.HasPrefix(r.URL.Path, "/api/notifications/") && !strings.HasPrefix(r.URL.Path, "/api/notifications/outbox") {
+			scoped := *a
+			scoped.user, scoped.sessionToken, scoped.impersonation = principal.UserID, principal.TokenHash, impersonation
+			handler := scoped.notification
+			if r.URL.Path == "/api/notifications" {
+				handler = scoped.notifications
+			}
+			scoped.serveImpersonated(http.HandlerFunc(handler), w, r)
+			return
+		}
+		pid := r.Header.Get("X-TaskLoom-Project")
 		if pid == "" {
 			pid = projectID
 		}
@@ -465,7 +510,11 @@ func (a *App) seedV3(now string) error {
 			if err != nil {
 				return fmt.Errorf("读取洞察需求编号: %w", err)
 			}
-			if err := execSeed("洞察需求编号", `UPDATE requirements SET code=? WHERE tenant_id=? AND project_id=? AND id=?`, fmt.Sprintf("REQ-%04d", id), tenantID, insightProjectID, id); err != nil {
+			code, err := requirementSerialCode(id)
+			if err != nil {
+				return err
+			}
+			if err := execSeed("洞察需求编号", `UPDATE requirements SET code=? WHERE tenant_id=? AND project_id=? AND id=?`, code, tenantID, insightProjectID, id); err != nil {
 				return err
 			}
 		}
@@ -510,7 +559,7 @@ func (a *App) seedV3(now string) error {
 		sid                        int64
 		title, body, key           string
 	}{
-		{projectID, "u_pm", "requirement.assigned", "requirement", orbitRequirementID, "你有新的高优先级需求", "REQ-0001 已分配给你，请确认范围与迭代。", "seed:pm:req1"},
+		{projectID, "u_pm", "requirement.assigned", "requirement", orbitRequirementID, "你有新的高优先级需求", "000001 已分配给你，请确认范围与迭代。", "seed:pm:req1"},
 		{projectID, "u_qa", "defect.verification", "defect", orbitDefectID, "缺陷等待回归验证", "筛选刷新问题已修复，等待测试确认。", "seed:qa:bug2"},
 		{insightProjectID, "u_algo", "sprint.started", "sprint", insightSprintID, "洞察引擎迭代已开始", "AIP 1.0 已进入执行阶段。", "seed:algo:sprint"},
 	} {
@@ -565,7 +614,7 @@ func (a *App) projectResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) projectMembers(w http.ResponseWriter, r *http.Request, id string) {
-	rows, err := a.db.QueryContext(r.Context(), `SELECT u.id,u.name,u.email,pm.role,u.active FROM project_members pm JOIN users u ON u.id=pm.user_id AND u.tenant_id=pm.tenant_id WHERE pm.tenant_id=? AND pm.project_id=? ORDER BY u.name`, tenantID, id)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT u.id,u.name,u.email,pm.role,u.active,`+projectRolesJSONSQL("pm")+` FROM project_members pm JOIN users u ON u.id=pm.user_id AND u.tenant_id=pm.tenant_id WHERE pm.tenant_id=? AND pm.project_id=? ORDER BY u.name`, tenantID, id)
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "数据暂时无法读取，请稍后重试")
 		return
@@ -573,13 +622,13 @@ func (a *App) projectMembers(w http.ResponseWriter, r *http.Request, id string) 
 	defer rows.Close()
 	items := []map[string]any{}
 	for rows.Next() {
-		var uid, name, email, role string
+		var uid, name, email, role, rawRoles string
 		var active bool
-		if err := rows.Scan(&uid, &name, &email, &role, &active); err != nil {
+		if err := rows.Scan(&uid, &name, &email, &role, &active, &rawRoles); err != nil {
 			fail(w, http.StatusServiceUnavailable, "database_unavailable", "数据暂时无法读取，请稍后重试")
 			return
 		}
-		items = append(items, map[string]any{"id": uid, "name": name, "email": email, "role": role, "active": active})
+		items = append(items, map[string]any{"id": uid, "name": name, "email": email, "role": role, "projectRoles": decodedProjectRoles(rawRoles, role), "active": active})
 	}
 	if err := rows.Err(); err != nil {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "数据暂时无法读取，请稍后重试")
@@ -704,6 +753,7 @@ func (a *App) myWork(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		x.Type = "需求"
+		x.Code = requirementDisplayCode(x.ID, x.Code)
 		x.URL = "/requirements?req=" + fmt.Sprint(x.ID)
 		applyWorkStatus(&x, catalog[x.ProjectID])
 		if access[x.ProjectID] && (scope == "all" || scope == x.ProjectID) {
@@ -818,6 +868,7 @@ func (a *App) myWork(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	queryRequirementID := requirementCodeQueryID(q)
 	typ := r.URL.Query().Get("type")
 	status := r.URL.Query().Get("status")
 	category := r.URL.Query().Get("category")
@@ -826,7 +877,7 @@ func (a *App) myWork(w http.ResponseWriter, r *http.Request) {
 		if !matchesWorkSprint(x, selectedSprint) {
 			continue
 		}
-		if q != "" && !strings.Contains(strings.ToLower(x.Title+" "+x.Code+" "+x.ProjectName), q) {
+		if q != "" && !strings.Contains(strings.ToLower(x.Title+" "+x.Code+" "+x.ProjectName), q) && !(x.Type == "需求" && queryRequirementID == x.ID) {
 			continue
 		}
 		if typ != "" && x.Type != typ {
@@ -876,6 +927,7 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	queryRequirementID := requirementCodeQueryID(q)
 	typ := r.URL.Query().Get("type")
 	pid := r.URL.Query().Get("project")
 	status := r.URL.Query().Get("status")
@@ -927,12 +979,13 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusServiceUnavailable, "database_unavailable", "数据暂时无法读取，请稍后重试")
 			return
 		}
-		if allow("需求", p, st) && match(code+" "+title+" "+desc+" "+people) {
+		displayCode := requirementDisplayCode(id, code)
+		if allow("需求", p, st) && (match(displayCode+" "+code+" "+title+" "+desc+" "+people) || queryRequirementID == id) {
 			snippet := excerpt(desc, q)
-			if q != "" && !match(code+" "+title+" "+desc) {
+			if q != "" && !match(displayCode+" "+code+" "+title+" "+desc) {
 				snippet = "参与人员与部门：" + excerpt(people, q)
 			}
-			items = append(items, searchItem{id, "需求", code, title, p, n, st, snippet, up, "/requirements?req=" + fmt.Sprint(id)})
+			items = append(items, searchItem{id, "需求", displayCode, title, p, n, st, snippet, up, "/requirements?req=" + fmt.Sprint(id)})
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -1143,6 +1196,10 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 	}
 	uid := a.uid()
 	readFilter := r.URL.Query().Get("read")
+	if readFilter != "" && readFilter != "unread" && readFilter != "read" {
+		fail(w, 400, "invalid_notification_filter", "通知已读状态筛选无效")
+		return
+	}
 	event := r.URL.Query().Get("eventType")
 	group := r.URL.Query().Get("group")
 	if !validNotificationGroup(group) {
@@ -1177,14 +1234,21 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 		q += " AND (" + notificationGroupSQL + ")=?"
 		args = append(args, group)
 	}
+	// 列表、总数及分类角标读取同一快照，避免并发标记时互相矛盾。
+	tx, err := a.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		failNotificationState(w, err)
+		return
+	}
+	defer tx.Rollback()
 	var total int
-	if err := a.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM ("+q+")", args...).Scan(&total); err != nil {
+	if err := tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM ("+q+")", args...).Scan(&total); err != nil {
 		fail(w, 503, "database_unavailable", "通知记录暂时无法读取，请稍后重试")
 		return
 	}
 	q += " ORDER BY n.created_at DESC,n.id DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
-	rows, err := a.db.QueryContext(r.Context(), q, args...)
+	rows, err := tx.QueryContext(r.Context(), q, args...)
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "通知记录暂时无法读取，请稍后重试")
 		return
@@ -1208,7 +1272,7 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	var unread int
-	if err := a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM user_notifications n WHERE n.tenant_id=? AND n.recipient_user_id=? AND n.read_at IS NULL`+visibleNotificationSQL, tenantID, uid).Scan(&unread); err != nil {
+	if err := tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM user_notifications n WHERE n.tenant_id=? AND n.recipient_user_id=? AND n.read_at IS NULL`+visibleNotificationSQL, tenantID, uid).Scan(&unread); err != nil {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "通知记录暂时无法读取，请稍后重试")
 		return
 	}
@@ -1218,7 +1282,7 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 		groupQuery += " AND n.project_id=?"
 		groupArgs = append(groupArgs, pid)
 	}
-	groupRows, err := a.db.QueryContext(r.Context(), groupQuery+" GROUP BY 1", groupArgs...)
+	groupRows, err := tx.QueryContext(r.Context(), groupQuery+" GROUP BY 1", groupArgs...)
 	if err != nil {
 		fail(w, 503, "database_unavailable", "通知记录暂时无法读取，请稍后重试")
 		return
@@ -1238,6 +1302,11 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "database_unavailable", "通知记录暂时无法读取，请稍后重试")
 		return
 	}
+	groupRows.Close()
+	if err := tx.Commit(); err != nil {
+		failNotificationState(w, err)
+		return
+	}
 	write(w, 200, map[string]any{"items": items, "unread": unread, "groupUnread": groupUnread, "total": total, "limit": limit, "offset": offset, "hasMore": offset+len(items) < total})
 }
 
@@ -1252,18 +1321,12 @@ func (a *App) notification(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, map[string]any{"unread": n})
 		return
 	}
-	if path == "read-all" && r.Method == "POST" {
-		res, err := a.db.ExecContext(r.Context(), `UPDATE user_notifications AS n SET read_at=? WHERE n.tenant_id=? AND n.recipient_user_id=? AND n.read_at IS NULL`+visibleNotificationSQL, time.Now().UTC().Format(time.RFC3339), tenantID, a.uid())
-		if err != nil {
-			fail(w, http.StatusServiceUnavailable, "database_unavailable", "通知记录暂时无法保存，请稍后重试")
+	if path == "read-all" || path == "bulk-read" {
+		if r.Method != http.MethodPost {
+			fail(w, 405, "method_not_allowed", "不支持的方法")
 			return
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			fail(w, http.StatusServiceUnavailable, "database_unavailable", "通知记录暂时无法保存，请稍后重试")
-			return
-		}
-		write(w, 200, map[string]any{"updated": n})
+		a.notificationBatchState(w, r, path == "read-all")
 		return
 	}
 	id, err := strconv.ParseInt(path, 10, 64)
@@ -1273,31 +1336,18 @@ func (a *App) notification(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "PATCH" {
 		var b struct {
-			Read bool `json:"read"`
+			Read *bool `json:"read"`
 		}
-		if decodeJSON(r, &b) != nil {
+		if decodeNotificationState(w, r, &b) != nil || b.Read == nil || id <= 0 {
 			fail(w, 400, "invalid_json", "请求格式不正确")
 			return
 		}
-		var at any = nil
-		if b.Read {
-			at = time.Now().UTC().Format(time.RFC3339)
-		}
-		res, err := a.db.ExecContext(r.Context(), `UPDATE user_notifications AS n SET read_at=? WHERE n.id=? AND n.tenant_id=? AND n.recipient_user_id=?`+visibleNotificationSQL, at, id, tenantID, a.uid())
+		result, err := a.setNotificationState(r.Context(), []int64{id}, *b.Read, false)
 		if err != nil {
-			fail(w, http.StatusServiceUnavailable, "database_unavailable", "通知记录暂时无法保存，请稍后重试")
+			failNotificationState(w, err)
 			return
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			fail(w, http.StatusServiceUnavailable, "database_unavailable", "通知记录暂时无法保存，请稍后重试")
-			return
-		}
-		if n == 0 {
-			fail(w, 404, "not_found", "通知不存在")
-			return
-		}
-		write(w, 200, map[string]any{"id": id, "read": b.Read})
+		write(w, 200, map[string]any{"id": id, "read": *b.Read, "updated": result.Updated, "unread": result.Unread})
 		return
 	}
 	fail(w, 405, "method_not_allowed", "不支持的方法")

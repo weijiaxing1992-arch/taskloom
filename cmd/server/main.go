@@ -43,8 +43,11 @@ type App struct {
 	impersonation *impersonationContext
 	wecomKey      []byte
 	wecomHTTP     *http.Client
-	wechatHTTP    *http.Client
-	aiHTTP        *http.Client
+	// 企业微信自建应用的 access_token 只驻留在进程内存中。使用指针是因为
+	// 请求处理会复制 App 的身份上下文，不能把已使用的互斥锁按值复制。
+	wecomAppTokens *wecomAppTokenCache
+	wechatHTTP     *http.Client
+	aiHTTP         *http.Client
 }
 
 // pid/uid 的默认值兼容启动迁移与测试，不能作为未认证请求的授权依据。
@@ -75,6 +78,7 @@ type Requirement struct {
 	ParentID                  *int64                `json:"parentId"`
 	Category                  string                `json:"category"`
 	Sprint                    string                `json:"sprint"`
+	IterationDelayCount       int                   `json:"iterationDelayCount"`
 	Status                    string                `json:"status"`
 	StatusName                string                `json:"statusName"`
 	StatusColor               string                `json:"statusColor"`
@@ -109,7 +113,10 @@ type Requirement struct {
 	AuthImpact                bool                  `json:"authImpact"`
 	CreatedAt                 string                `json:"createdAt"`
 	UpdatedAt                 string                `json:"updatedAt,omitempty"`
-	CustomFields              map[string]any        `json:"customFields,omitempty"`
+	// DependencyStatus 仅在需求列表按依赖状态筛选或排序时返回。依赖目标可能跨项目，
+	// 因此由受限的批量查询生成，不能由客户端根据关联数据自行推断。
+	DependencyStatus *requirementDependencyState `json:"dependencyStatus,omitempty"`
+	CustomFields     map[string]any              `json:"customFields,omitempty"`
 }
 type Comment struct {
 	commentReply
@@ -133,14 +140,15 @@ func main() {
 		log.Fatal(err)
 	}
 	a := &App{
-		db:           db,
-		web:          env("DEVFLOW_WEB_DIR", "./dist"),
-		databasePath: dbPath,
-		startedAt:    time.Now().UTC(),
-		signingKey:   []byte(env("DEVFLOW_SESSION_SECRET", localSigningSecret)),
-		sessionTTL:   30 * 24 * time.Hour,
-		cookieSecure: env("DEVFLOW_COOKIE_SECURE", "false") == "true",
-		apiSlots:     make(chan struct{}, sqliteMaxAPIRequests),
+		db:             db,
+		web:            env("DEVFLOW_WEB_DIR", "./dist"),
+		databasePath:   dbPath,
+		startedAt:      time.Now().UTC(),
+		signingKey:     []byte(env("DEVFLOW_SESSION_SECRET", localSigningSecret)),
+		sessionTTL:     30 * 24 * time.Hour,
+		cookieSecure:   env("DEVFLOW_COOKIE_SECURE", "false") == "true",
+		apiSlots:       make(chan struct{}, sqliteMaxAPIRequests),
+		wecomAppTokens: &wecomAppTokenCache{},
 	}
 	if len(a.signingKey) < 32 {
 		log.Fatal("DEVFLOW_SESSION_SECRET must contain at least 32 bytes")
@@ -158,6 +166,8 @@ func main() {
 	}
 	a.wecomHTTP = newWecomHTTPClient()
 	go a.runUserWecom(context.Background())
+	go a.runWecomAppDeliveries(context.Background())
+	go a.runReleaseNotes(context.Background())
 	mux := http.NewServeMux()
 	mux.Handle("/api/", a.scopedAPI())
 	mux.Handle("/", spa(a.web))
@@ -264,7 +274,11 @@ CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREM
 			if err != nil {
 				return fmt.Errorf("读取初始需求 ID: %w", err)
 			}
-			if _, err := tx.Exec(`UPDATE requirements SET code=? WHERE id=?`, fmt.Sprintf("REQ-%04d", id), id); err != nil {
+			code, err := requirementSerialCode(id)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE requirements SET code=? WHERE id=?`, code, id); err != nil {
 				return fmt.Errorf("设置初始需求编号: %w", err)
 			}
 		}
@@ -305,6 +319,9 @@ CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREM
 	if err := a.migrateRequirementFavorites(); err != nil {
 		return err
 	}
+	if err := a.migrateRequirementShares(); err != nil {
+		return err
+	}
 	if err := a.migrateRequirementDependencies(); err != nil {
 		return err
 	}
@@ -315,6 +332,9 @@ CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREM
 		return err
 	}
 	if err := a.migrateOrganizationAdministration(); err != nil {
+		return err
+	}
+	if err := a.migrateProjectMemberRoles(); err != nil {
 		return err
 	}
 	if err := a.migrateQualityCollaboration(); err != nil {
@@ -332,6 +352,9 @@ CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREM
 	if err := a.migrateAI(); err != nil {
 		return err
 	}
+	if err := a.migrateReleaseNotes(); err != nil {
+		return err
+	}
 	if err := a.migrateTestingWorkspace(); err != nil {
 		return err
 	}
@@ -344,6 +367,9 @@ CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREM
 	if err := a.migrateAuditHistory(); err != nil {
 		return err
 	}
+	if err := a.migrateRequirementHistory(); err != nil {
+		return err
+	}
 	if err := a.migratePrivateDrafts(); err != nil {
 		return err
 	}
@@ -354,6 +380,9 @@ CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREM
 		return err
 	}
 	if err := a.migrateWechatLogin(); err != nil {
+		return err
+	}
+	if err := a.migrateWecomCustomApp(); err != nil {
 		return err
 	}
 	if err := a.migrateIntegrations(); err != nil {
@@ -403,7 +432,7 @@ func withJSON(next http.Handler) http.Handler {
 				r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 			}
 		}
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,X-DevFlow-Project,X-DevFlow-Expected-User,Accept-Language")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,X-TaskLoom-Project,X-TaskLoom-Expected-User,Accept-Language")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(204)
 			return
@@ -444,7 +473,10 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		a.operationDisabledSession(w, r, uid)
 		return
 	}
-	if mustChange {
+	// 受限代看不会改变成员的首改密码状态；它只在服务端已锁定全部写
+	// 请求时临时跳过这一个界面门禁，给企业管理员核对成员实际可见范围。
+	// 普通登录和常规代访问仍必须先完成首改密码。
+	if mustChange && !(a.impersonation != nil && a.impersonation.ReadOnly) {
 		a.initialPasswordSession(w, r, uid, a.impersonation)
 		return
 	}
@@ -469,7 +501,19 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 			permissionKeys = append(permissionKeys, permission.Key)
 		}
 	}
-	write(w, 200, map[string]any{"tenant": map[string]string{"id": tenantID, "name": tn}, "project": map[string]string{"id": a.pid(), "name": pn, "code": pc}, "user": map[string]any{"id": uid, "name": name, "role": role, "avatarColor": avatarColor, "locale": storedLocale(locale), "timezone": timezone, "operationDisabled": false, "mustChangePassword": false}, "supportedLocales": supportedLocales, "impersonation": a.impersonation, "canImpersonate": canImpersonate && a.impersonation == nil, "organizationPermissions": permissionKeys})
+	projectRoles, err := memberProjectRoles(r.Context(), a.db, a.pid(), uid)
+	if err != nil {
+		failOrganization(w, err)
+		return
+	}
+	// A pending first-password target can only reach this normal workspace
+	// session through the explicitly read-only delegation path. Expose the
+	// limitation on impersonation instead of presenting the password-change
+	// screen, which would otherwise make the authorised review unusable. The
+	// underlying user row is never changed and all non-GET requests are denied
+	// earlier by resolveImpersonation.
+	mustChangeForSession := mustChange && !(a.impersonation != nil && a.impersonation.ReadOnly)
+	write(w, 200, map[string]any{"tenant": map[string]string{"id": tenantID, "name": tn}, "project": map[string]string{"id": a.pid(), "name": pn, "code": pc}, "user": map[string]any{"id": uid, "name": name, "role": role, "projectRoles": projectRoles, "avatarColor": avatarColor, "locale": storedLocale(locale), "timezone": timezone, "operationDisabled": false, "mustChangePassword": mustChangeForSession}, "supportedLocales": supportedLocales, "impersonation": a.impersonation, "canImpersonate": canImpersonate && a.impersonation == nil, "organizationPermissions": permissionKeys})
 }
 func (a *App) meta(w http.ResponseWriter, r *http.Request) {
 	sprints := []string{"待规划"}
@@ -530,7 +574,7 @@ func (a *App) requirements(w http.ResponseWriter, r *http.Request) {
 		failWorkQuery(w, queryErr)
 		return
 	}
-	q := `SELECT ` + pageQuery.selectColumns() + ` FROM requirements WHERE tenant_id=? AND project_id=?`
+	q := ` FROM requirements WHERE tenant_id=? AND project_id=?`
 	args := []any{tenantID, a.pid()}
 	switch r.URL.Query().Get("mine") {
 	case "", "0", "false":
@@ -590,33 +634,55 @@ func (a *App) requirements(w http.ResponseWriter, r *http.Request) {
 		args = append(args, canonical)
 	}
 	if s := r.URL.Query().Get("q"); s != "" {
-		q += ` AND (title LIKE ? OR code LIKE ? OR EXISTS (SELECT 1 FROM field_values fv JOIN field_definitions fd ON fd.id=fv.field_definition_id WHERE fv.tenant_id=requirements.tenant_id AND fv.project_id=requirements.project_id AND fv.object_type='requirement' AND fv.object_id=requirements.id AND fd.searchable=1 AND fv.value_json LIKE ?) OR instr(lower(` + workItemPeopleSearchSQL("requirement", "requirements") + `),lower(?))>0)`
+		codeID := requirementCodeQueryID(s)
+		q += ` AND (title LIKE ? OR code LIKE ? OR EXISTS (SELECT 1 FROM field_values fv JOIN field_definitions fd ON fd.id=fv.field_definition_id WHERE fv.tenant_id=requirements.tenant_id AND fv.project_id=requirements.project_id AND fv.object_type='requirement' AND fv.object_id=requirements.id AND fd.searchable=1 AND fv.value_json LIKE ?) OR instr(lower(` + workItemPeopleSearchSQL("requirement", "requirements") + `),lower(?))>0`
 		args = append(args, "%"+s+"%", "%"+s+"%", "%"+s+"%", strings.TrimSpace(s))
+		if codeID > 0 {
+			q += ` OR requirements.id=?`
+			args = append(args, codeID)
+		}
+		q += `)`
 	}
-	q += " ORDER BY id"
-	rows, e := a.db.QueryContext(r.Context(), q, args...)
+	sqlPage, e := a.readRequirementSQLPage(r.Context(), r, pageQuery, listQuery, q, args)
 	if e != nil {
-		fail(w, 500, "db_error", e.Error())
+		failWorkQuery(w, e)
 		return
 	}
-	defer rows.Close()
 	items := []Requirement{}
-	for rows.Next() {
-		var x Requirement
-		if err := scanRequirement(rows, &x); err != nil {
+	if sqlPage != nil {
+		items = sqlPage.items
+	} else {
+		rows, err := a.db.QueryContext(r.Context(), `SELECT `+pageQuery.selectColumns()+q+" ORDER BY id", args...)
+		if err != nil {
 			fail(w, 500, "db_error", err.Error())
 			return
 		}
-		items = append(items, x)
+		defer rows.Close()
+		for rows.Next() {
+			var x Requirement
+			if err := scanRequirement(rows, &x); err != nil {
+				fail(w, 500, "db_error", err.Error())
+				return
+			}
+			items = append(items, x)
+		}
+		if err := rows.Err(); err != nil {
+			fail(w, http.StatusServiceUnavailable, "database_unavailable", "数据暂时无法读取，请稍后重试")
+			return
+		}
+		rows.Close()
 	}
-	if err := rows.Err(); err != nil {
-		fail(w, http.StatusServiceUnavailable, "database_unavailable", "数据暂时无法读取，请稍后重试")
-		return
-	}
-	rows.Close()
 	if err := a.hydrateRequirementBatch(r.Context(), a.db, items); err != nil {
 		failWorkQuery(w, err)
 		return
+	}
+	// 依赖状态是计算字段。仅在它参与筛选或排序时加载，避免普通需求池列表
+	// 为没有使用依赖功能的项目额外读取整张依赖表。
+	if requirementListNeedsDependencyState(listQuery) {
+		if err := a.hydrateRequirementDependencyStates(r.Context(), items); err != nil {
+			failWorkQuery(w, err)
+			return
+		}
 	}
 	hydrated := make([]Requirement, 0, len(items))
 	for _, x := range items {
@@ -636,6 +702,10 @@ func (a *App) requirements(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		hydrated = append(hydrated, x)
+	}
+	if sqlPage != nil {
+		write(w, 200, sqlPage.response(hydrated))
+		return
 	}
 	items, e = a.applyRequirementListQuery(hydrated, listQuery)
 	if e != nil {
@@ -703,7 +773,7 @@ func (a *App) requirement(w http.ResponseWriter, r *http.Request) {
 		case "checklist":
 			a.checklist(w, r, id)
 		case "activities":
-			a.activities(w, r, id)
+			a.requirementHistory(w, r, id)
 		default:
 			fail(w, 404, "not_found", "资源不存在")
 		}
@@ -759,12 +829,23 @@ func (a *App) checklist(w http.ResponseWriter, r *http.Request, id int64) {
 			fail(w, 422, "validation_error", "检查项不能为空")
 			return
 		}
-		res, err := a.db.ExecContext(r.Context(), `INSERT INTO checklist_items(tenant_id,project_id,requirement_id,text)VALUES(?,?,?,?)`, tenantID, a.pid(), id, b.Text)
+		tx, err := a.db.BeginTx(r.Context(), nil)
 		if err != nil {
 			fail(w, http.StatusServiceUnavailable, "database_unavailable", "检查项暂时无法保存，请稍后重试")
 			return
 		}
-		cid, err := res.LastInsertId()
+		defer tx.Rollback()
+		res, err := tx.ExecContext(r.Context(), `INSERT INTO checklist_items(tenant_id,project_id,requirement_id,text)VALUES(?,?,?,?)`, tenantID, a.pid(), id, b.Text)
+		var cid int64
+		if err == nil {
+			cid, err = res.LastInsertId()
+		}
+		if err == nil {
+			err = a.recordRequirementChecklistHistory(tx, id, nil, map[string]any{"id": cid, "text": b.Text, "done": false})
+		}
+		if err == nil {
+			err = tx.Commit()
+		}
 		if err != nil {
 			fail(w, http.StatusServiceUnavailable, "database_unavailable", "检查项暂时无法保存，请稍后重试")
 			return
@@ -781,18 +862,30 @@ func (a *App) checklist(w http.ResponseWriter, r *http.Request, id int64) {
 			fail(w, http.StatusBadRequest, "invalid_json", "请求格式不正确")
 			return
 		}
-		res, err := a.db.ExecContext(r.Context(), `UPDATE checklist_items SET done=? WHERE id=? AND tenant_id=? AND project_id=? AND requirement_id=?`, b.Done, b.ID, tenantID, a.pid(), id)
+		tx, err := a.db.BeginTx(r.Context(), nil)
 		if err != nil {
 			fail(w, http.StatusServiceUnavailable, "database_unavailable", "检查项暂时无法保存，请稍后重试")
 			return
 		}
-		count, err := res.RowsAffected()
-		if err != nil {
-			fail(w, http.StatusServiceUnavailable, "database_unavailable", "检查项暂时无法保存，请稍后重试")
-			return
-		}
-		if count == 0 {
+		defer tx.Rollback()
+		var text string
+		var done bool
+		err = tx.QueryRowContext(r.Context(), `SELECT text,done FROM checklist_items WHERE id=? AND tenant_id=? AND project_id=? AND requirement_id=?`, b.ID, tenantID, a.pid(), id).Scan(&text, &done)
+		if errors.Is(err, sql.ErrNoRows) {
 			fail(w, http.StatusNotFound, "not_found", "检查项不存在")
+			return
+		}
+		if err == nil && done != b.Done {
+			_, err = tx.ExecContext(r.Context(), `UPDATE checklist_items SET done=? WHERE id=? AND tenant_id=? AND project_id=? AND requirement_id=?`, b.Done, b.ID, tenantID, a.pid(), id)
+			if err == nil {
+				err = a.recordRequirementChecklistHistory(tx, id, map[string]any{"id": b.ID, "text": text, "done": done}, map[string]any{"id": b.ID, "text": text, "done": b.Done})
+			}
+		}
+		if err == nil {
+			err = tx.Commit()
+		}
+		if err != nil {
+			fail(w, http.StatusServiceUnavailable, "database_unavailable", "检查项暂时无法保存，请稍后重试")
 			return
 		}
 	} else if r.Method != http.MethodGet {
@@ -991,7 +1084,7 @@ func (a *App) members(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := a.uid()
-	rows, err := a.db.QueryContext(r.Context(), `SELECT u.id,u.name,u.email,u.employee_no,u.department,u.active,COALESCE(tm.role,'member'),m.role,u.last_active,COALESCE(tm.status,''),EXISTS(SELECT 1 FROM project_members pm WHERE pm.tenant_id=m.tenant_id AND pm.project_id=m.project_id AND pm.user_id=m.user_id) FROM users u JOIN memberships m ON m.user_id=u.id AND m.tenant_id=u.tenant_id LEFT JOIN tenant_memberships tm ON tm.user_id=u.id AND tm.tenant_id=u.tenant_id WHERE u.tenant_id=? AND m.project_id=? ORDER BY u.active DESC,u.name`, tenantID, a.pid())
+	rows, err := a.db.QueryContext(r.Context(), `SELECT u.id,u.name,u.email,u.employee_no,u.department,u.active,u.must_change_password,COALESCE(tm.role,'member'),m.role,u.last_active,COALESCE(tm.status,''),EXISTS(SELECT 1 FROM project_members pm WHERE pm.tenant_id=m.tenant_id AND pm.project_id=m.project_id AND pm.user_id=m.user_id) FROM users u JOIN memberships m ON m.user_id=u.id AND m.tenant_id=u.tenant_id LEFT JOIN tenant_memberships tm ON tm.user_id=u.id AND tm.tenant_id=u.tenant_id WHERE u.tenant_id=? AND m.project_id=? ORDER BY u.active DESC,u.name`, tenantID, a.pid())
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "成员列表暂时无法读取，请稍后重试")
 		return
@@ -1000,13 +1093,13 @@ func (a *App) members(w http.ResponseWriter, r *http.Request) {
 	out := []map[string]any{}
 	for rows.Next() {
 		var id, n, e, employeeNo, department, tenantRole, projectRole, lastActive, tenantStatus string
-		var active, projectMember bool
-		if err := rows.Scan(&id, &n, &e, &employeeNo, &department, &active, &tenantRole, &projectRole, &lastActive, &tenantStatus, &projectMember); err != nil {
+		var active, mustChangePassword, projectMember bool
+		if err := rows.Scan(&id, &n, &e, &employeeNo, &department, &active, &mustChangePassword, &tenantRole, &projectRole, &lastActive, &tenantStatus, &projectMember); err != nil {
 			fail(w, http.StatusServiceUnavailable, "database_unavailable", "成员列表暂时无法读取，请稍后重试")
 			return
 		}
 		active = active && tenantStatus == "active" && projectMember
-		out = append(out, map[string]any{"id": id, "name": n, "email": e, "employeeNo": employeeNo, "department": department, "active": active, "tenantRole": tenantRole, "projectRole": projectRole, "role": projectRole, "lastActive": lastActive, "isCurrent": id == uid})
+		out = append(out, map[string]any{"id": id, "name": n, "email": e, "employeeNo": employeeNo, "department": department, "active": active, "mustChangePassword": mustChangePassword, "tenantRole": tenantRole, "projectRole": projectRole, "role": projectRole, "lastActive": lastActive, "isCurrent": id == uid})
 	}
 	if err := rows.Err(); err != nil {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "成员列表暂时无法读取，请稍后重试")
@@ -1016,6 +1109,14 @@ func (a *App) members(w http.ResponseWriter, r *http.Request) {
 	if err := a.addMemberDepartmentIDs(out); err != nil {
 		fail(w, http.StatusServiceUnavailable, "database_unavailable", "成员列表暂时无法读取，请稍后重试")
 		return
+	}
+	for _, member := range out {
+		roles, err := memberProjectRoles(r.Context(), a.db, a.pid(), member["id"].(string))
+		if err != nil {
+			failOrganization(w, err)
+			return
+		}
+		member["projectRoles"] = roles
 	}
 	write(w, 200, map[string]any{"items": out})
 }
@@ -1048,6 +1149,11 @@ func spa(dir string) http.Handler {
 		cleanPath := filepath.Clean("/" + r.URL.Path)
 		p := filepath.Join(dir, strings.TrimPrefix(cleanPath, "/"))
 		info, err := os.Stat(p)
+		// The public download portal owns its directory entry; other paths remain SPA routes.
+		if cleanPath == "/portal" && err == nil && info.IsDir() {
+			serveHTML(w, r, filepath.Join(p, "index.html"))
+			return
+		}
 		if err == nil && !info.IsDir() {
 			if strings.EqualFold(filepath.Ext(p), ".html") {
 				serveHTML(w, r, p)

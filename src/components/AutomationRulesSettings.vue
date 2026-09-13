@@ -249,10 +249,10 @@ defineExpose({ dirty, saving })
       </div>
     </details>
 
-    <div v-if="opened" class="settings-modal-shade" @click.self="close">
+    <div v-if="opened" class="settings-modal-shade slide-panel-shade" @click.self="close">
       <form ref="modal" tabindex="-1" class="settings-modal automation-modal" role="dialog" aria-modal="true" :aria-label="t(editing ? '编辑自动化规则' : '创建自动化规则')" @submit.prevent="save">
         <header><div><h2>{{ t(editing ? '编辑自动化规则' : '创建自动化规则') }}</h2><p>{{ t('仅需求状态变更可触发；动作固定为站内通知。') }}</p></div><button type="button" :disabled="saving" :aria-label="t('关闭')" @click="close">×</button></header>
-        <fieldset :disabled="saving || scope.locked.value">
+        <div class="modal-body automation-panel-body"><fieldset :disabled="saving || scope.locked.value">
           <label>{{ t('规则名称') }} *<input v-model="form.name" maxlength="100" required :placeholder="t('例如：研发完成后提醒验证人')"></label>
           <div class="automation-form-grid"><label>{{ t('来源状态（可选）') }}<AppSelect v-model="form.fromStatus" :options="stateOptions" :label="t('来源状态（可选）')" :disabled="!mutable" /></label><label>{{ t('目标状态（可选）') }}<AppSelect v-model="form.toStatus" :options="stateOptions" :label="t('目标状态（可选）')" :disabled="!mutable" /></label></div>
           <div class="automation-form-grid"><label>{{ t('触发事件') }}<input :value="t('需求状态已变更')" disabled></label><label>{{ t('执行动作') }}<input :value="t('发送站内通知')" disabled></label></div>
@@ -260,7 +260,7 @@ defineExpose({ dirty, saving })
           <label class="settings-check"><input v-model="form.enabled" type="checkbox">{{ t('保存后立即启用规则') }}<small>{{ t('新规则默认关闭；建议先点击“演练”核对范围。') }}</small></label>
         </fieldset>
         <p v-if="error" class="settings-error" role="alert">{{ t(error) }}</p>
-        <div v-if="preview" class="automation-preview modal-preview"><b>{{ t('演练结果') }}</b><span>{{ t('匹配 {count} 条需求', { count: preview.matchingSampleCount }) }}</span><ul v-if="matchingPreview.length"><li v-for="item in matchingPreview" :key="item.id"><code>{{ item.code }}</code> {{ item.title }}</li></ul></div>
+        <div v-if="preview" class="automation-preview modal-preview"><b>{{ t('演练结果') }}</b><span>{{ t('匹配 {count} 条需求', { count: preview.matchingSampleCount }) }}</span><ul v-if="matchingPreview.length"><li v-for="item in matchingPreview" :key="item.id"><code>{{ item.code }}</code> {{ item.title }}</li></ul></div></div>
         <footer><button type="button" class="btn" :disabled="saving" @click="close">{{ t('取消') }}</button><button type="button" class="btn" :disabled="!mutable" @click="previewCurrent">{{ t('演练') }}</button><button type="submit" class="btn primary" :disabled="!mutable">{{ saving ? t('保存中…') : t('保存规则') }}</button></footer>
       </form>
     </div>

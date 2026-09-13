@@ -63,7 +63,7 @@ func TestRequirementExportCompleteHierarchyCommentsAndIndirectTesting(t *testing
 		}
 	}
 	text := w.Body.String()
-	for _, required := range []string{"Grandchild comment", "Reply full body", "Full comment 205", "Full review 205", "Full action", "Full expected", "Actual full result", "Remarks survive", "Grandchild checklist", "Historical author", "Renamed person", "Audit full value", "X-DevFlow-Project"} {
+	for _, required := range []string{"Grandchild comment", "Reply full body", "Full comment 205", "Full review 205", "Full action", "Full expected", "Actual full result", "Remarks survive", "Grandchild checklist", "Historical author", "Renamed person", "Audit full value", "X-TaskLoom-Project"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("missing full content %q", required)
 		}
@@ -81,7 +81,7 @@ func TestRequirementExportCompleteHierarchyCommentsAndIndirectTesting(t *testing
 	if attachment["downloadUrl"] != "/api/requirements/910001/attachments/910001" {
 		t.Fatal("download link incorrect")
 	}
-	if !strings.Contains(w.Header().Get("Content-Disposition"), "REQ-910001-complete.json") || !strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
+	if !strings.Contains(w.Header().Get("Content-Disposition"), "910001-complete.json") || !strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
 		t.Fatal("unsafe download headers")
 	}
 }

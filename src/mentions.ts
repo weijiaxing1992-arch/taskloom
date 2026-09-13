@@ -1,4 +1,4 @@
-export type MentionMember = { id: string; name: string; email?: string; department?: string; departmentIds?: string[]; departmentNames?: string[]; projectRole?: string; role?: string; active?: boolean; isCurrent?: boolean }
+export type MentionMember = { id: string; name: string; email?: string; department?: string; departmentIds?: string[]; departmentNames?: string[]; tenantRole?: string; projectRoles?:string[]; projectRole?: string; role?: string; active?: boolean; isCurrent?: boolean }
 export type MentionToken = { start: number; end: number; query: string }
 export const mentionRoleLabels: Record<string, string> = { tenant_admin: '企业管理员', project_admin: '项目管理员', product: '产品', frontend: '前端工程师', backend: '后端工程师', algorithm: '算法工程师', ui: 'UI 设计师', frontend_lead: '前端组长', backend_lead: '后端组长', qa: '测试', viewer: '只读' }
 
@@ -40,8 +40,8 @@ export function filterMentionMembers(members: MentionMember[], query: string, tr
   const value = query.trim().toLocaleLowerCase()
   return members.filter(member => {
     if (member.active === false) return false
-    const role = member.projectRole || member.role || ''
-    return !value || [member.name, member.email || '', member.department || '', ...(member.departmentNames || []), role, mentionRoleLabels[role] || '', translate(mentionRoleLabels[role] || role)].some(text => text.toLocaleLowerCase().includes(value))
+    const roles = member.projectRoles ?? [member.projectRole || member.role || '']
+    return !value || [member.name, member.email || '', member.department || '', ...(member.departmentNames || []), ...roles.flatMap(role=>[role, mentionRoleLabels[role] || '', translate(mentionRoleLabels[role] || role)])].some(text => text.toLocaleLowerCase().includes(value))
   })
 }
 
@@ -55,7 +55,8 @@ export function membersInDepartment(members: MentionMember[], departmentId = '')
 /** 角色/部门只限制新增候选，不自动删除需求上历史绑定的人员。 */
 export function membersMatchingRoles(members: MentionMember[], roles?: readonly string[] | null): MentionMember[] {
   const allowed = new Set(normalizeMentionIds(roles))
-  return members.filter(member => member.active !== false && (!allowed.size || allowed.has(member.projectRole || member.role || '')))
+  // 与后端字段候选规则一致：真实企业管理员仅补足明确允许的管理员候选，不能代替测试或工程师角色。
+  return members.filter(member => member.active !== false && (!allowed.size || (member.tenantRole === 'tenant_admin' && allowed.has('tenant_admin')) || (member.projectRoles ?? [member.projectRole || member.role || '']).some(role=>allowed.has(role))))
 }
 export function memberCandidates(members: MentionMember[], roles?: readonly string[] | null, departmentId = ''): MentionMember[] {
   return membersInDepartment(membersMatchingRoles(members, roles), departmentId)

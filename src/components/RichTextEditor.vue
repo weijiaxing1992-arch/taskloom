@@ -352,3 +352,7 @@ defineExpose({ focus: () => editor.value?.commands.focus(), reading, insertFiles
  .rich-mention-popup [role=option]{min-height:44px}.rich-mention-popup [role=option]>span{min-width:0;overflow-wrap:anywhere}
 }
 </style>
+<style scoped>
+/* 提及仍由正文中的 @ 触发；这里只统一候选菜单的紧凑扁平外观。 */
+.rich-mention-popup{border-color:var(--line,#d9e0ea);border-radius:5px;background:var(--surface-raised,#fff);color:var(--ink,#26334a);box-shadow:none}.rich-mention-popup header{padding:6px 8px;border-color:var(--line,#d9e0ea)}.rich-mention-popup [role=listbox]{padding:3px;max-height:240px}.rich-mention-popup [role=option]{min-height:34px;padding:5px 6px;border-radius:3px;background:transparent;color:inherit}.rich-mention-popup [role=option].active{background:var(--primary-soft,#eef4ff)}.rich-mention-popup [role=option]:focus-visible{outline:2px solid var(--primary,#3370eb);outline-offset:-2px}.rich-mention-popup small{margin-top:1px}.rich-mention-popup small,.rich-mention-popup em,.rich-mention-popup header span,.rich-mention-popup footer,.rich-mention-popup p{color:var(--muted,#758298)}.rich-mention-popup footer,.rich-mention-popup p{padding:4px 8px;border-color:var(--line,#d9e0ea)}@media(max-width:820px){.rich-mention-popup [role=option]{min-height:44px}}
+</style>

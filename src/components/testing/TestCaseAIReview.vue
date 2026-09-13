@@ -6,7 +6,7 @@ import { useSettingsScope } from '../settingsScope'
 import { Button } from '../ui/button'
 
 type Mode='standard'|'logic'
-type Capability={configured:boolean;enabled:boolean;model:string;canReview:boolean;modes:string[]}
+type Capability={configured:boolean;enabled:boolean;model:string;canReview:boolean;modes:string[];baseUrl?:string}
 type Issue={severity:'high'|'medium'|'low';field:string;message:string;suggestion:string}
 type Review={summary:string;issues:Issue[];model:string;replayed?:boolean}
 const props=defineProps<{caseId:number;updatedAt:string;disabled?:boolean}>()
@@ -53,7 +53,7 @@ defineExpose({canLeave,reviewing})
    <p v-if="!capability.configured||!capability.enabled" class="test-ai-hint">{{t('企业尚未启用 AI 生成功能，请联系企业管理员配置。')}}</p>
    <p v-else-if="!capability.canReview" class="test-ai-hint">{{t('当前身份没有审查测试用例的权限。')}}</p>
    <template v-else>
-    <p class="test-ai-hint">{{t('模型')}} <code>{{capability.model}}</code></p>
+    <p class="test-ai-hint">{{t('模型')}} <code>{{capability.model}}</code></p><p v-if="capability.baseUrl" class="test-ai-hint">{{t('服务地址')}} · {{capability.baseUrl}}</p>
     <div class="test-ai-mode" role="radiogroup" :aria-label="t('审查模式')"><label v-for="choice in modes" :key="choice" :class="{active:mode===choice}"><input v-model="mode" type="radio" :value="choice" :disabled="blocked||!capability.modes.includes(choice)"/><span><b>{{t(choice==='standard'?'标准审查':'逻辑审查')}}</b><small>{{t(choice==='standard'?'审查覆盖结构、步骤完整性、可验证性和风险。':'审查业务逻辑、前后条件、边界和依赖一致性。')}}</small></span></label></div>
     <p class="test-ai-disclosure">{{t('仅发送标题、前置条件、步骤、预期结果、类型、优先级和当前项目可访问的关联需求摘要；不会发送评论、附件或未保存修改。')}}</p>
     <label class="test-ai-consent"><input v-model="confirmed" type="checkbox" :disabled="blocked"/><span>{{t('我确认可将当前已保存测试用例及其关联需求摘要发送给外部 AI 服务。')}}</span></label>

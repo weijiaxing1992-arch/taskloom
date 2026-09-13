@@ -21,7 +21,7 @@ onBeforeUnmount(()=>document.removeEventListener('pointerdown',dismiss))
     <section v-if="open&&!disabled" :id="id" class="status-filter-menu" :aria-label="label||t('工作状态（多选）')">
       <input v-model="query" :aria-label="t('查找状态')" :placeholder="t('查找状态')">
       <div class="status-filter-actions"><small>{{t('多选状态之间为“或”关系')}}</small><button type="button" @click="emit('update:modelValue',[])">{{t('清空')}}</button></div>
-      <div class="status-filter-options"><label v-for="option in filtered" :key="option.value"><input type="checkbox" :checked="selected.includes(option.value)" :aria-label="statusOptionLabel(option,t)" @change="toggle(option.value)"><span class="workflow-color" :style="workflowStyle({status:option.value,statusColor:option.color})">{{statusOptionLabel(option,t)}}</span></label><p v-if="!filtered.length">{{t('没有匹配的状态')}}</p></div>
+      <div class="status-filter-options"><label v-for="option in filtered" :key="option.value"><input type="checkbox" :checked="selected.includes(option.value)" :aria-label="statusOptionLabel(option,t)" @change="toggle(option.value)"><span class="workflow-color" :style="workflowStyle({status:option.value,statusColor:option.color,statusSystem:!option.custom})">{{statusOptionLabel(option,t)}}</span></label><p v-if="!filtered.length">{{t('没有匹配的状态')}}</p></div>
       <button type="button" class="status-filter-done" @click="open=false;trigger?.focus()">{{t('完成选择')}}</button>
     </section>
   </div>
